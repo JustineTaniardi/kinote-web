@@ -121,12 +121,6 @@ function getUserIdFromRequest(req: Request): number | null {
  */
 export async function GET(req: Request) {
   try {
-    // Temporary debug logging to help diagnose repeated calls from client
-    // This will print a timestamp and a stack trace so we can see where requests originate
-    console.log(
-      `[DEBUG] GET /api/streaks invoked at ${new Date().toISOString()}`
-    );
-    console.trace("Trace /api/streaks GET");
     const userId = getUserIdFromRequest(req);
     if (!userId) {
       return NextResponse.json({ message: "Unauthorized" }, { status: 401 });
@@ -134,10 +128,27 @@ export async function GET(req: Request) {
 
     const streaks = await prisma.streak.findMany({
       where: { userId },
+      include: {
+        day: true,
+        category: true,
+        subCategory: true,
+        histories: {
+          select: {
+            id: true,
+            verifiedAI: true,
+          },
+        },
+      },
       orderBy: { createdAt: "desc" },
     });
 
-    return NextResponse.json(streaks);
+    // Calculate streak count from verified histories
+    const streaksWithCount = streaks.map((streak: any) => ({
+      ...streak,
+      streakCount: streak.histories.filter((h: any) => h.verifiedAI).length,
+    }));
+
+    return NextResponse.json(streaksWithCount);
   } catch (error) {
     console.error("Get streaks error:", error);
     return NextResponse.json(
@@ -155,43 +166,121 @@ export async function POST(req: Request) {
     }
 
     const body = await req.json();
+    console.log("Create streak payload:", body);
+
     const {
       title,
       categoryId,
       subCategoryId,
-      dayId,
+      dayIds = [],
       totalTime = 0,
       breakTime = 0,
       breakCount = 0,
       description,
     } = body;
 
-    if (!title || !categoryId || !dayId) {
+    if (!title || !categoryId) {
       return NextResponse.json(
-        { message: "Missing required fields: title, categoryId, dayId" },
+        { message: "Missing required fields: title, categoryId" },
         { status: 400 }
       );
+    }
+
+    // Ensure dayIds is an array and parse to integers
+    const dayIdsArray = Array.isArray(dayIds) 
+      ? dayIds.map(id => typeof id === 'string' ? parseInt(id) : id).filter(id => !isNaN(id))
+      : dayIds ? [typeof dayIds === 'string' ? parseInt(dayIds) : dayIds].filter(id => !isNaN(id)) : [];
+
+    // Parse categoryId as integer
+    const parsedCategoryId = typeof categoryId === 'string' ? parseInt(categoryId) : categoryId;
+    const parsedSubCategoryId = subCategoryId ? (typeof subCategoryId === 'string' ? parseInt(subCategoryId) : subCategoryId) : null;
+
+    console.log("Parsed values - userId:", userId, "categoryId:", parsedCategoryId, "dayIds:", dayIdsArray);
+
+    // Validate category exists
+    const category = await prisma.category.findUnique({
+      where: { id: parsedCategoryId },
+    });
+
+    if (!category) {
+      console.error("Category not found:", parsedCategoryId);
+      return NextResponse.json(
+        { message: "Category not found" },
+        { status: 400 }
+      );
+    }
+
+    // Validate subcategory if provided
+    if (parsedSubCategoryId) {
+      const subCategory = await prisma.subCategory.findUnique({
+        where: { id: parsedSubCategoryId },
+      });
+
+      if (!subCategory) {
+        console.error("SubCategory not found:", parsedSubCategoryId);
+        return NextResponse.json(
+          { message: "SubCategory not found" },
+          { status: 400 }
+        );
+      }
+    }
+
+    // Validate user exists
+    const user = await prisma.user.findUnique({
+      where: { id: userId },
+    });
+
+    if (!user) {
+      console.error("User not found:", userId);
+      return NextResponse.json(
+        { message: "User not found. Please log in again." },
+        { status: 401 }
+      );
+    }
+
+    // Validate days exist if provided
+    if (dayIdsArray.length > 0) {
+      const days = await prisma.day.findMany({
+        where: { id: { in: dayIdsArray } },
+      });
+
+      if (days.length !== dayIdsArray.length) {
+        console.error("Some days not found. Requested:", dayIdsArray, "Found:", days.map(d => d.id));
+        return NextResponse.json(
+          { message: "Some days not found in database" },
+          { status: 400 }
+        );
+      }
     }
 
     const streak = await prisma.streak.create({
       data: {
         title,
         userId,
-        categoryId,
-        subCategoryId: subCategoryId || null,
-        dayId,
-        totalTime,
-        breakTime,
-        breakCount,
+        categoryId: parsedCategoryId,
+        subCategoryId: parsedSubCategoryId,
+        dayId: dayIdsArray.length > 0 ? dayIdsArray[0] : null,
+        dayIds: dayIdsArray.length > 0 ? JSON.stringify(dayIdsArray) : "[]",
+        totalTime: parseInt(String(totalTime)) || 0,
+        breakTime: parseInt(String(breakTime)) || 0,
+        breakCount: parseInt(String(breakCount)) || 0,
+        streakCount: 0,
         description: description || null,
+      },
+      include: {
+        category: true,
+        subCategory: true,
+        day: true,
       },
     });
 
+    console.log("Streak created successfully:", streak.id);
     return NextResponse.json(streak, { status: 201 });
   } catch (error) {
     console.error("Create streak error:", error);
+    const errorMessage = error instanceof Error ? error.message : String(error);
     return NextResponse.json(
-      { message: "Internal server error" },
+      { message: "Internal server error", error: errorMessage },
       { status: 500 }
     );
   }

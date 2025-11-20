@@ -127,6 +127,7 @@ export async function POST(
 
     const body = await req.json();
     const {
+      title = "",
       focusSeconds = 0,
       breakRepetitionsUsed = 0,
       breakSessions = [],
@@ -149,24 +150,35 @@ export async function POST(
     const history = await prisma.streakHistory.create({
       data: {
         streakId,
+        userId,
+        title,
+        description,
         startTime: now,
         endTime: now,
         focusDuration: focusSeconds,
         totalBreakTime,
-        breakCount: breakRepetitionsUsed,
         duration: Math.round((focusSeconds + totalBreakTime) / 60), // Total duration in minutes
-        description,
         breakSessions: JSON.stringify(breakSessionsData), // Store as JSON string
       },
     });
 
+    // Count completed sessions from StreakHistory for this user and streak
+    const completedCount = await prisma.streakHistory.count({
+      where: {
+        streakId,
+        userId,
+      },
+    });
+
     // Update streak metadata
+    // NOTE: totalTime should NEVER be updated - it's the user's fixed duration input
+    // Only update breakTime and streakCount for analytics
     await prisma.streak.update({
       where: { id: streakId },
       data: {
-        totalTime: streak.totalTime + focusSeconds,
+        // ❌ DO NOT UPDATE totalTime - it must stay as the user's original input (e.g., 120 minutes)
         breakTime: streak.breakTime + totalBreakTime,
-        breakCount: streak.breakCount + breakRepetitionsUsed,
+        streakCount: completedCount, // Set to count of history entries
         updatedAt: new Date(),
       },
     });
@@ -175,7 +187,8 @@ export async function POST(
       historyId: history.id,
       focusDuration: focusSeconds,
       totalBreakTime,
-      breakCount: breakRepetitionsUsed,
+      breakRepetitionsUsed,
+      streakCount: completedCount,
       sessionData: history,
     });
   } catch (error) {

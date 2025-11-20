@@ -50,9 +50,12 @@ export async function GET(req: Request) {
       );
     }
 
+    // Return purposes as strings only
     const purposes = ["Lomba", "Pekerjaan", "Kursus"];
 
-    return NextResponse.json(purposes);
+    return NextResponse.json(purposes, {
+      headers: { "Content-Type": "application/json" },
+    });
   } catch (error) {
     console.error("Get purposes error:", error);
     return NextResponse.json(

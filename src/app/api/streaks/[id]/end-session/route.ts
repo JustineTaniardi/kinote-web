@@ -59,7 +59,7 @@ export async function POST(
     const lastHistory = await prisma.streakHistory.findFirst({
       where: {
         streakId,
-        endTime: new Date(0),
+        endTime: null,
       },
       orderBy: { startTime: "desc" },
     });
@@ -86,7 +86,7 @@ export async function POST(
     return NextResponse.json({
       historyId: updatedHistory.id,
       duration: durationMinutes,
-    });
+    }, { status: 200 });
   } catch (error) {
     console.error("End streak error:", error);
     return NextResponse.json(

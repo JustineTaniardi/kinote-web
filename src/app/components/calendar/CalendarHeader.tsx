@@ -4,6 +4,7 @@ import { useState, useEffect } from "react";
 import { addWeeks, format, startOfWeek } from "date-fns";
 import { ChevronLeft, ChevronRight, RotateCcw } from "lucide-react";
 import { ViewMode } from "./types";
+import { showError, showSuccess } from "@/lib/toast";
 
 interface CalendarHeaderProps {
   weekStart: Date;
@@ -77,16 +78,14 @@ export default function CalendarHeader({
 
   const handleToday = () => {
     const today = new Date();
-    onWeekChange(
-      new Date(today.getFullYear(), today.getMonth(), today.getDate())
-    );
+    onWeekChange(new Date(today.getFullYear(), today.getMonth(), today.getDate()));
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
 
     if (!activityName.trim()) {
-      alert("Please enter an activity name");
+      showError("Masukkan nama aktivitas");
       return;
     }
 
@@ -105,9 +104,10 @@ export default function CalendarHeader({
       setStartTime("08:00");
       setEndTime("09:00");
       setDifficulty("medium");
+      showSuccess("Aktivitas berhasil ditambahkan");
     } catch (error) {
       console.error("Error adding activity:", error);
-      alert("Failed to add activity");
+      showError("Gagal menambahkan aktivitas");
     } finally {
       setSubmitting(false);
     }
@@ -118,17 +118,14 @@ export default function CalendarHeader({
   return (
     <div className="bg-white border border-gray-200 shadow-sm mb-6">
       {/* Form Row */}
-      <form
-        onSubmit={handleSubmit}
-        className="px-4 py-4 border-b border-gray-200"
-      >
+      <form onSubmit={handleSubmit} className="px-4 py-4 border-b border-gray-200">
         <div className="flex flex-wrap gap-3 items-end">
           {/* Activity Name */}
           <input
             type="text"
             value={activityName}
             onChange={(e) => setActivityName(e.target.value)}
-            placeholder="Activity Name"
+            placeholder="Nama"
             className="flex-shrink-0 px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white"
           />
 
@@ -166,8 +163,8 @@ export default function CalendarHeader({
             onChange={(e) => onViewModeChange(e.target.value as ViewMode)}
             className="flex-shrink-0 px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
           >
-            <option value="week">Week</option>
-            <option value="today">Today</option>
+            <option value="week">Minggu</option>
+            <option value="today">Hari ini</option>
           </select>
 
           {/* Add Button */}
@@ -176,7 +173,7 @@ export default function CalendarHeader({
             disabled={submitting || isLoading}
             className="flex-shrink-0 px-4 py-2 bg-gray-900 hover:bg-gray-800 disabled:bg-gray-400 text-white font-medium rounded-md text-sm transition whitespace-nowrap"
           >
-            {submitting || isLoading ? "..." : "+ Add"}
+            {submitting || isLoading ? "..." : "+ Tambahkan"}
           </button>
         </div>
       </form>
@@ -187,14 +184,14 @@ export default function CalendarHeader({
           <button
             onClick={handlePrevWeek}
             className="p-2 hover:bg-gray-100 rounded-md transition text-gray-600"
-            title="Previous Week"
+            title="Minggu sebelumnya"
           >
             <ChevronLeft size={20} />
           </button>
           <button
             onClick={handleNextWeek}
             className="p-2 hover:bg-gray-100 rounded-md transition text-gray-600"
-            title="Next Week"
+            title="Minggu berikutnya"
           >
             <ChevronRight size={20} />
           </button>
@@ -203,7 +200,7 @@ export default function CalendarHeader({
             className="ml-2 px-3 py-1.5 bg-gray-100 hover:bg-gray-200 text-gray-700 text-sm font-medium rounded-full transition inline-flex items-center gap-1"
           >
             <RotateCcw size={14} />
-            Today
+            Hari Ini
           </button>
         </div>
         <div className="text-sm text-gray-600 font-medium">

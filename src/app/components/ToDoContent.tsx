@@ -1,9 +1,11 @@
 "use client";
-import React, { useEffect, useState, useMemo } from "react";
+import React, { useEffect, useState, useMemo, useRef } from "react";
 import { motion } from "framer-motion";
+import { ChevronDownIcon } from "@heroicons/react/24/outline";
 import AddToDo from "./AddToDo";
 import ToDoDetailSidebar from "./ToDoDetailSidebar";
-import { useTasks } from "@/lib/hooks/useTasks";
+import { useTasks, useTaskMutation } from "@/lib/hooks/useTasks";
+import { showSuccess, showError } from "@/lib/toast";
 import type { Task } from "@/lib/hooks/useTasks";
 
 // Interface for ToDo item
@@ -29,15 +31,16 @@ interface ToDoFormData {
   category: string;
   priority: string;
   date: string;
+  time: string;
   description: string;
+  status?: string;
 }
 
-// CSS untuk split strike-through animation
+// CSS for animations
 const strikeStyles = `
   .row-transition {
     transition: all 0.35s cubic-bezier(.2,.8,.2,1);
   }
-  /* Full-row single-line strike (appears across the entire row) */
   .row-completed {
     position: relative;
   }
@@ -55,6 +58,8 @@ const strikeStyles = `
 `;
 
 const ToDoContent: React.FC = () => {
+  const sortDropdownRef = useRef<HTMLDivElement>(null);
+
   // Inject CSS for animations
   useEffect(() => {
     const style = document.createElement("style");
@@ -65,27 +70,54 @@ const ToDoContent: React.FC = () => {
     };
   }, []);
 
-  // State untuk sidebar
+  // State variables
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
-
-  // State for edit cell
   const [editingCell, setEditingCell] = useState<{
     id: number;
     field: "status" | "category" | "priority";
   } | null>(null);
+  const [todos, setTodos] = useState<ToDoItem[]>([]);
+  const [selectedItems, setSelectedItems] = useState<number[]>([]);
+  const [isAllExpanded, setIsAllExpanded] = useState(true);
+  const [selectedActivity, setSelectedActivity] = useState<ToDoItem | null>(null);
+  const [isModalOpen, setIsModalOpen] = useState(false);
+  const [sortOpen, setSortOpen] = useState(false);
+  const [currentSort, setCurrentSort] = useState<string | null>(null);
 
-  // Click outside handler untuk close dropdown
+  // Close dropdown when clicking outside
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (
+        sortDropdownRef.current &&
+        !sortDropdownRef.current.contains(event.target as Node)
+      ) {
+        setSortOpen(false);
+      }
+    };
+
+    if (sortOpen) {
+      document.addEventListener("mousedown", handleClickOutside);
+    }
+
+    return () => {
+      document.removeEventListener("mousedown", handleClickOutside);
+    };
+  }, [sortOpen]);
+
+  // Fetch tasks from API
+  const { data: tasks, refetch } = useTasks();
+  const { deleteTask, updateTask } = useTaskMutation();
+
+  // Click outside handler for dropdown
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
       const target = event.target as HTMLElement;
-      // Check jika click di luar dropdown
       if (!target.closest(".dropdown-cell")) {
         setEditingCell(null);
       }
     };
 
     if (editingCell) {
-      // Gunakan timeout agar tidak langsung close saat baru dibuka
       setTimeout(() => {
         document.addEventListener("mousedown", handleClickOutside);
       }, 0);
@@ -96,92 +128,94 @@ const ToDoContent: React.FC = () => {
     };
   }, [editingCell]);
 
-  // State for todos
-  const [todos, setTodos] = useState<ToDoItem[]>([
-    {
-      id: 1,
-      status: "Not Started",
-      title: "Oil Change",
-      category: "Maintenance",
-      priority: "Medium",
-      deadline: "Friday, November 14, 2025",
-      description: "Change oil and check tire pressure",
-      createdAt: new Date().toISOString(),
-    },
-    {
-      id: 2,
-      status: "Not Started",
-      title: "Oil Change",
-      category: "Maintenance",
-      priority: "Medium",
-      deadline: "Friday, November 14, 2025",
-      description: "Change oil and check tire pressure",
-      createdAt: new Date().toISOString(),
-    },
-    {
-      id: 3,
-      status: "Not Started",
-      title: "Oil Change",
-      category: "Maintenance",
-      priority: "Medium",
-      deadline: "Friday, November 14, 2025",
-      description: "Change oil and check tire pressure",
-      createdAt: new Date().toISOString(),
-    },
-  ]);
+  // Sort function - MUST be defined before useMemo that uses it
+  const getSortedTodos = (items: ToDoItem[]) => {
+    if (!currentSort) return items;
 
-  const [selectedItems, setSelectedItems] = useState<number[]>([]);
-  const [isAllExpanded, setIsAllExpanded] = useState(true);
-
-  // Fetch tasks from API
-  const { data: tasks } = useTasks();
+    const sorted = [...items];
+    switch (currentSort) {
+      case "name-asc":
+        return sorted.sort((a, b) => a.title.localeCompare(b.title));
+      case "difficulty-easy-hard":
+        const difficultyOrder = { Low: 0, Medium: 1, High: 2 };
+        return sorted.sort(
+          (a, b) =>
+            (difficultyOrder[a.priority as keyof typeof difficultyOrder] || 0) -
+            (difficultyOrder[b.priority as keyof typeof difficultyOrder] || 0)
+        );
+      case "deadline-nearest":
+        return sorted.sort((a, b) => {
+          const dateA = a.deadline ? new Date(a.deadline) : new Date(9999, 0, 0);
+          const dateB = b.deadline ? new Date(b.deadline) : new Date(9999, 0, 0);
+          return dateA.getTime() - dateB.getTime();
+        });
+      case "deadline-farthest":
+        return sorted.sort((a, b) => {
+          const dateA = a.deadline ? new Date(a.deadline) : new Date(0);
+          const dateB = b.deadline ? new Date(b.deadline) : new Date(0);
+          return dateB.getTime() - dateA.getTime();
+        });
+      default:
+        return sorted;
+    }
+  };
 
   // Memoize converted todos from API data
   const convertedTodos = useMemo(() => {
     if (tasks && tasks.length > 0) {
-      return tasks.map((task: Task) => ({
-        id: task.id,
-        status: task.status || "Not Started",
-        title: task.title,
-        category: task.category || "",
-        priority: task.priority || "Medium",
-        deadline: task.deadline
-          ? new Date(task.deadline).toLocaleDateString("en-US", {
-              weekday: "long",
-              year: "numeric",
-              month: "long",
-              day: "numeric",
-            })
-          : "",
-        description: task.description || "",
-        subcategory: task.subcategory || "",
-        createdAt: task.createdAt,
-        updatedAt: task.updatedAt,
-      }));
+      return tasks.map((task: Task) => {
+        // Extract status name from nested object
+        const statusName = typeof task.status === 'object' && task.status !== null && 'name' in task.status
+          ? (task.status as any).name
+          : task.status || "Not Started";
+        
+        return {
+          id: task.id,
+          status: statusName,
+          title: task.title,
+          category: (task as any).category || "",
+          priority: task.priority || "medium",
+          deadline: task.deadline
+            ? new Date(task.deadline).toLocaleDateString("en-US", {
+                weekday: "long",
+                year: "numeric",
+                month: "long",
+                day: "numeric",
+              })
+            : "",
+          description: task.description || "",
+          subcategory: (task as any).subcategory || "",
+          createdAt: task.createdAt,
+          updatedAt: task.updatedAt,
+        };
+      });
     }
     return null;
   }, [tasks]);
 
-  // Use API todos if available, otherwise use manual todos
-  const displayTodos =
+  // Use API todos if available, otherwise use empty state
+  const baseTodos =
     convertedTodos && convertedTodos.length > 0 ? convertedTodos : todos;
 
-  // Handler untuk checkbox individual
+  // Apply sorting to display todos
+  const displayTodos = useMemo(
+    () => getSortedTodos(baseTodos),
+    [baseTodos, currentSort]
+  );
+
+  // Handler for checkbox
   const handleSelectItem = (id: number) => {
     const isCurrentlySelected = selectedItems.includes(id);
 
-    // Update selected items
     setSelectedItems((prev) =>
       prev.includes(id) ? prev.filter((item) => item !== id) : [...prev, id]
     );
 
-    // Move completed item to bottom and update status
     if (!isCurrentlySelected) {
       setTodos((prev) => {
         const selectedItem = prev.find((item) => item.id === id);
         if (!selectedItem) return prev;
         const remaining = prev.filter((item) => item.id !== id);
-        // Update status to 'Completed' when marked as complete and set updatedAt
         const completedItem = {
           ...selectedItem,
           status: "Completed",
@@ -190,7 +224,6 @@ const ToDoContent: React.FC = () => {
         return [...remaining, completedItem];
       });
     } else {
-      // Restore status to 'Not Started' when unchecked and clear updatedAt
       setTodos((prev) =>
         prev.map((item) =>
           item.id === id
@@ -201,7 +234,7 @@ const ToDoContent: React.FC = () => {
     }
   };
 
-  // Helper function untuk warna priority
+  // Helper function for priority color
   const getPriorityColor = (priority: string): string => {
     switch (priority.toLowerCase()) {
       case "high":
@@ -217,20 +250,65 @@ const ToDoContent: React.FC = () => {
     }
   };
 
-  // Handler for submit form from AddToDo
-  const handleSubmitToDo = (data: ToDoFormData) => {
-    console.log("New ToDo Data:", data);
-    const newToDo: ToDoItem = {
-      id: todos.length + 1,
-      status: "Not Started",
-      title: data.title,
-      category: data.category,
-      priority: data.priority,
-      deadline: data.date,
-      description: data.description,
-      createdAt: new Date().toISOString(),
-    };
-    setTodos([...todos, newToDo]);
+  // Handler for submit form
+  const handleSubmitToDo = async (data: ToDoFormData) => {
+    try {
+      // Map priority to difficulty ID (Low=1, Medium=2, High=3)
+      const difficultyMap: Record<string, number> = {
+        "Low": 1,
+        "Medium": 2,
+        "High": 3,
+      };
+      const difficultyId = difficultyMap[data.priority] || 2;
+
+      // Map status to status ID (Not Started=1)
+      const statusId = 1;
+
+      // Combine date and time for deadline
+      const deadline = new Date(`${data.date}T${data.time}`);
+
+      const token = localStorage.getItem("authToken");
+      const response = await fetch("/api/tasks", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({
+          title: data.title,
+          description: data.description,
+          deadline: deadline.toISOString(),
+          priority: data.priority.toLowerCase(),
+          difficultyId,
+          statusId,
+        }),
+      });
+
+      if (response.ok) {
+        const newTask = await response.json();
+        const newToDo: ToDoItem = {
+          id: newTask.id,
+          status: "Not Started",
+          title: newTask.title,
+          category: data.category,
+          priority: data.priority,
+          deadline: data.date,
+          description: newTask.description || "",
+          createdAt: newTask.createdAt,
+          updatedAt: newTask.updatedAt,
+        };
+        setTodos([...todos, newToDo]);
+        showSuccess("ToDo created successfully!");
+        console.log("ToDo created successfully:", newToDo);
+      } else {
+        const errorData = await response.json();
+        console.error("Failed to create todo:", errorData);
+        showError("Failed to create todo: " + (errorData.message || "Unknown error"));
+      }
+    } catch (error) {
+      console.error("Error creating todo:", error);
+      showError("Error creating todo: " + (error instanceof Error ? error.message : "Unknown error"));
+    }
   };
 
   // Handler to update cell value
@@ -260,12 +338,6 @@ const ToDoContent: React.FC = () => {
     "Finance",
   ];
 
-  // Modal state for viewing activity details
-  const [selectedActivity, setSelectedActivity] = useState<ToDoItem | null>(
-    null
-  );
-  const [isModalOpen, setIsModalOpen] = useState(false);
-
   const openActivityModal = (item: ToDoItem) => {
     setSelectedActivity(item);
     setIsModalOpen(true);
@@ -279,10 +351,14 @@ const ToDoContent: React.FC = () => {
   const handleDeleteActivity = (id: number) => {
     setTodos((prev) => prev.filter((t) => t.id !== id));
     setSelectedItems((prev) => prev.filter((sid) => sid !== id));
+    showSuccess("Task deleted successfully");
+    // Refresh the page after a short delay
+    setTimeout(() => {
+      window.location.reload();
+    }, 500);
   };
 
   const handleEditActivity = (updated: unknown) => {
-    // Convert from ToDoDetailSidebar format to ToDoItem format
     const updatedData = updated as ToDoItem;
     const convertedItem: ToDoItem = {
       ...selectedActivity!,
@@ -299,15 +375,13 @@ const ToDoContent: React.FC = () => {
         t.id === convertedItem.id ? { ...t, ...convertedItem } : t
       )
     );
-    // keep selected state and ordering as-is; checkbox remains the only trigger for completion
     setSelectedActivity(convertedItem);
   };
 
   return (
     <div className="flex flex-col w-full h-screen overflow-hidden">
-      {/* Header section - fixed at top */}
+      {/* Header section */}
       <div className="shrink-0 bg-white border-b border-gray-200 p-6">
-        {/* Search Bar */}
         <div className="w-full bg-[#F4F6F9] rounded-lg px-6 py-3 shadow-sm mb-6 flex items-center">
           <svg
             className="w-4 h-4 text-gray-400 mr-3"
@@ -329,269 +403,160 @@ const ToDoContent: React.FC = () => {
           />
         </div>
 
-        {/* Filter & Sort Buttons */}
         <div className="flex gap-3">
-          <button className="flex items-center gap-2 px-4 py-2 bg-[#161D36] border border-[#161D36] rounded-lg text-sm text-white hover:bg-[#1a2140] transition">
-            <span className="text-lg">+</span>
-            Filter
-          </button>
-          <button className="flex items-center gap-2 px-4 py-2 bg-[#161D36] border border-[#161D36] rounded-lg text-sm text-white hover:bg-[#1a2140] transition">
-            <span className="text-lg">+</span>
-            Sort
-          </button>
+          <div className="relative" ref={sortDropdownRef}>
+            <button
+              onClick={() => setSortOpen(!sortOpen)}
+              className="flex items-center gap-2 px-4 py-2 bg-[#161D36] border border-[#161D36] rounded-lg text-sm text-white hover:bg-[#1a2140] transition"
+            >
+              <span className="text-lg">⚙️</span>
+              Filter / Sort
+              <ChevronDownIcon
+                className={`w-4 h-4 transition-transform ${
+                  sortOpen ? "rotate-180" : ""
+                }`}
+              />
+            </button>
+
+            {sortOpen && (
+              <div className="absolute top-full mt-2 left-0 bg-white border border-gray-200 rounded-lg shadow-lg z-50 min-w-[220px]">
+                <button
+                  onClick={() => {
+                    setCurrentSort("name-asc");
+                    setSortOpen(false);
+                  }}
+                  className={`w-full text-left px-4 py-2 hover:bg-gray-100 transition text-sm ${
+                    currentSort === "name-asc" ? "bg-blue-50 text-blue-600 font-medium" : "text-gray-700"
+                  }`}
+                >
+                  Sort by Name (A → Z)
+                </button>
+                <button
+                  onClick={() => {
+                    setCurrentSort("difficulty-easy-hard");
+                    setSortOpen(false);
+                  }}
+                  className={`w-full text-left px-4 py-2 hover:bg-gray-100 transition text-sm ${
+                    currentSort === "difficulty-easy-hard" ? "bg-blue-50 text-blue-600 font-medium" : "text-gray-700"
+                  }`}
+                >
+                  Sort by Difficulty (Easy → Hard)
+                </button>
+                <button
+                  onClick={() => {
+                    setCurrentSort("deadline-nearest");
+                    setSortOpen(false);
+                  }}
+                  className={`w-full text-left px-4 py-2 hover:bg-gray-100 transition text-sm ${
+                    currentSort === "deadline-nearest" ? "bg-blue-50 text-blue-600 font-medium" : "text-gray-700"
+                  }`}
+                >
+                  Sort by Deadline (Nearest → Farthest)
+                </button>
+                <button
+                  onClick={() => {
+                    setCurrentSort("deadline-farthest");
+                    setSortOpen(false);
+                  }}
+                  className={`w-full text-left px-4 py-2 hover:bg-gray-100 transition text-sm ${
+                    currentSort === "deadline-farthest" ? "bg-blue-50 text-blue-600 font-medium" : "text-gray-700"
+                  }`}
+                >
+                  Sort by Deadline (Farthest → Nearest)
+                </button>
+              </div>
+            )}
+          </div>
         </div>
       </div>
 
-      {/* Main content area - scrollable */}
+      {/* Main content area */}
       <div className="flex-1 overflow-auto bg-white p-6">
-        {/* Container dengan Background untuk Table */}
-        <div className="bg-[#F8FAFB] rounded-xl p-0">
-          {/* All Section */}
-          <div className="mb-6">
-            <button
-              onClick={() => setIsAllExpanded(!isAllExpanded)}
-              className="flex items-center gap-2 mb-3 text-sm font-semibold text-gray-700"
-            >
-              <span
-                className={`transition-transform ${
-                  isAllExpanded ? "rotate-90" : ""
-                }`}
+        {displayTodos.length === 0 ? (
+          <div className="flex flex-col items-center justify-center h-full">
+            <div className="text-center">
+              <div className="text-gray-400 mb-4 text-5xl">📋</div>
+              <h3 className="text-gray-600 font-semibold mb-2">No tasks yet</h3>
+              <p className="text-gray-500 text-sm mb-6">
+                Create your first task to get started
+              </p>
+              <button
+                onClick={() => setIsSidebarOpen(true)}
+                className="px-6 py-2 bg-[#161D36] text-white rounded-lg text-sm font-medium hover:bg-[#1a2140] transition"
               >
-                ▶
-              </span>
-              All
-              <span className="ml-1 px-2 py-0.5 bg-gray-200 text-gray-600 rounded text-xs font-medium">
-                {displayTodos.length}
-              </span>
-            </button>
+                Add Activity
+              </button>
+            </div>
+          </div>
+        ) : (
+          <div className="bg-[#F8FAFB] rounded-xl p-0">
+            <div className="mb-6">
+              <button
+                onClick={() => setIsAllExpanded(!isAllExpanded)}
+                className="flex items-center gap-2 mb-3 text-sm font-semibold text-gray-700"
+              >
+                <span
+                  className={`transition-transform ${
+                    isAllExpanded ? "rotate-90" : ""
+                  }`}
+                >
+                  ▶
+                </span>
+                All
+                <span className="ml-1 px-2 py-0.5 bg-gray-200 text-gray-600 rounded text-xs font-medium">
+                  {displayTodos.length}
+                </span>
+              </button>
 
-            {isAllExpanded && (
-              <div className="bg-white rounded-lg border border-gray-200 overflow-x-auto">
-                {/* Table Header - Hidden on Mobile */}
-                <div className="hidden md:grid grid-cols-[40px_1fr_120px_120px_120px_180px_1fr] gap-4 px-4 py-4 bg-[#161D36] border-b-2 border-[#161D36] text-xs font-bold text-white uppercase tracking-wide sticky top-0 z-10">
-                  <div className="flex items-center" />
-                  <div className="flex items-center">Status</div>
-                  <div className="flex items-center">Title</div>
-                  <div className="flex items-center">Date</div>
-                  <div className="flex items-center">Category</div>
-                  <div className="flex items-center">Priority</div>
-                  <div className="flex items-center">Description</div>
-                </div>
+              {isAllExpanded && (
+                <div className="bg-white rounded-lg border border-gray-200 overflow-x-auto">
+                  <div className="hidden md:grid grid-cols-[40px_1fr_120px_120px_120px_180px_1fr] gap-4 px-4 py-4 bg-[#161D36] border-b-2 border-[#161D36] text-xs font-bold text-white uppercase tracking-wide sticky top-0 z-10">
+                    <div className="flex items-center" />
+                    <div className="flex items-center">Status</div>
+                    <div className="flex items-center">Title</div>
+                    <div className="flex items-center">Date</div>
+                    <div className="flex items-center">Category</div>
+                    <div className="flex items-center">Priority</div>
+                    <div className="flex items-center">Description</div>
+                  </div>
 
-                {/* Desktop Table Body */}
-                <div className="hidden md:block">
-                  {displayTodos.map((item) => (
-                    <motion.div
-                      layout
-                      transition={{ layout: { duration: 0.28 } }}
-                      key={item.id}
-                      onClick={() => openActivityModal(item)}
-                      className={`row-transition grid grid-cols-[40px_1fr_120px_120px_120px_180px_1fr] gap-4 px-4 py-4 border-b border-gray-100 hover:bg-gray-50 text-sm ${
-                        selectedItems.includes(item.id)
-                          ? "bg-gray-200 row-completed text-gray-700"
-                          : "bg-white text-gray-700"
-                      }`}
-                    >
-                      {/* Checkbox */}
-                      <div className="flex items-center">
-                        <input
-                          type="checkbox"
-                          checked={selectedItems.includes(item.id)}
-                          onChange={() => handleSelectItem(item.id)}
-                          onClick={(e) => e.stopPropagation()}
-                          className="w-4 h-4 cursor-pointer accent-black"
-                        />
-                      </div>
-
-                      {/* Status - Text Only (Non-Editable) */}
-                      <div className="relative text-gray-700">
-                        <span className="inline-block px-3 py-1.5 rounded bg-gray-100">
-                          {item.status}
-                        </span>
-                      </div>
-
-                      <div className="text-gray-700">{item.title}</div>
-                      <div className="text-gray-700">{item.deadline}</div>
-
-                      {/* Category - Editable (disabled when completed) */}
-                      <div
-                        className={`relative dropdown-cell ${
-                          selectedItems.includes(item.id) ? "" : ""
-                        }`}
-                      >
-                        <div
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            if (!selectedItems.includes(item.id))
-                              setEditingCell({
-                                id: item.id,
-                                field: "category",
-                              });
-                          }}
-                          className={`cursor-pointer hover:bg-gray-200 bg-gray-100 px-3 py-1.5 rounded transition inline-block ${
-                            selectedItems.includes(item.id) ? "opacity-70" : ""
-                          }`}
-                        >
-                          {item.category}
-                        </div>
-                        {editingCell?.id === item.id &&
-                          editingCell?.field === "category" && (
-                            <div className="absolute top-full left-0 mt-1 bg-white border border-gray-300 rounded shadow-lg z-20 w-48 max-h-100 overflow-y-auto">
-                              <div className="py-1 text-xs text-gray-500 px-2 border-b">
-                                Choose one
-                              </div>
-                              {categoryOptions.map((option) => (
-                                <button
-                                  key={option}
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    handleUpdateCell(
-                                      item.id,
-                                      "category",
-                                      option
-                                    );
-                                  }}
-                                  className="w-full text-left px-2 py-1.5 text-sm hover:bg-gray-100"
-                                >
-                                  {option}
-                                </button>
-                              ))}
-                            </div>
-                          )}
-                      </div>
-
-                      {/* Priority - Editable (disabled when completed) */}
-                      <div className="relative dropdown-cell">
-                        <div
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            if (!selectedItems.includes(item.id))
-                              setEditingCell({
-                                id: item.id,
-                                field: "priority",
-                              });
-                          }}
-                          className="cursor-pointer inline-block"
-                        >
-                          <span
-                            className={`inline-block px-3 py-1 rounded-md text-xs font-medium ${getPriorityColor(
-                              item.priority
-                            )} hover:opacity-80 transition ${
-                              selectedItems.includes(item.id)
-                                ? "opacity-70"
-                                : ""
-                            }`}
-                          >
-                            {item.priority}
-                          </span>
-                        </div>
-                        {editingCell?.id === item.id &&
-                          editingCell?.field === "priority" && (
-                            <div className="absolute top-full left-0 mt-1 bg-white border border-gray-300 rounded shadow-lg z-20 min-w-max">
-                              <div className="py-1 text-xs text-gray-500 px-2 border-b whitespace-nowrap">
-                                Choose one
-                              </div>
-                              {priorityOptions.map((option) => (
-                                <button
-                                  key={option}
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    handleUpdateCell(
-                                      item.id,
-                                      "priority",
-                                      option
-                                    );
-                                  }}
-                                  className="w-full text-left px-2 py-1.5 text-sm hover:bg-gray-100"
-                                >
-                                  <span
-                                    className={`inline-block px-3 py-1 rounded-md text-xs font-medium ${getPriorityColor(
-                                      option
-                                    )}`}
-                                  >
-                                    {option}
-                                  </span>
-                                </button>
-                              ))}
-                            </div>
-                          )}
-                      </div>
-
-                      <div
-                        className={`truncate ${
+                  <div className="hidden md:block">
+                    {displayTodos.map((item) => (
+                      <motion.div
+                        layout
+                        transition={{ layout: { duration: 0.28 } }}
+                        key={item.id}
+                        onClick={() => openActivityModal(item)}
+                        className={`row-transition grid grid-cols-[40px_1fr_120px_120px_120px_180px_1fr] gap-4 px-4 py-4 border-b border-gray-100 hover:bg-gray-50 text-sm ${
                           selectedItems.includes(item.id)
-                            ? "text-gray-700"
-                            : "text-gray-600"
+                            ? "bg-gray-200 row-completed text-gray-700"
+                            : "bg-white text-gray-700"
                         }`}
                       >
-                        {item.description}
-                      </div>
-                    </motion.div>
-                  ))}
-                </div>
+                        <div className="flex items-center">
+                          <input
+                            type="checkbox"
+                            checked={selectedItems.includes(item.id)}
+                            onChange={() => handleSelectItem(item.id)}
+                            onClick={(e) => e.stopPropagation()}
+                            className="w-4 h-4 cursor-pointer accent-black"
+                          />
+                        </div>
 
-                {/* Mobile Card Layout */}
-                <div className="md:hidden space-y-3 p-4">
-                  {displayTodos.map((item) => (
-                    <motion.div
-                      layout
-                      transition={{ layout: { duration: 0.28 } }}
-                      key={item.id}
-                      onClick={() => openActivityModal(item)}
-                      className={`row-transition p-4 rounded-lg border-2 ${
-                        selectedItems.includes(item.id)
-                          ? "bg-gray-200 border-gray-300 row-completed"
-                          : "bg-white border-gray-200 hover:border-gray-300"
-                      }`}
-                    >
-                      {/* Checkbox + Title Row */}
-                      <div className="flex items-start gap-3 mb-3">
-                        <input
-                          type="checkbox"
-                          checked={selectedItems.includes(item.id)}
-                          onChange={() => handleSelectItem(item.id)}
-                          onClick={(e) => e.stopPropagation()}
-                          className="w-5 h-5 cursor-pointer accent-[#161D36] mt-0.5 shrink-0"
-                        />
-                        <div className="flex-1 min-w-0">
-                          <h3
-                            className={`font-semibold text-sm ${
-                              selectedItems.includes(item.id)
-                                ? "text-gray-700"
-                                : "text-gray-900"
-                            }`}
-                          >
-                            {item.title}
-                          </h3>
-                          <span
-                            className={`inline-block mt-1 px-2 py-1 text-xs font-medium rounded ${
-                              selectedItems.includes(item.id)
-                                ? "bg-gray-300 text-gray-700"
-                                : "bg-gray-100 text-gray-600"
-                            }`}
-                          >
+                        <div className="relative text-gray-700">
+                          <span className="inline-block px-3 py-1.5 rounded bg-gray-100">
                             {item.status}
                           </span>
                         </div>
-                      </div>
 
-                      {/* Info Grid */}
-                      <div
-                        className={`space-y-2 text-sm ${
-                          selectedItems.includes(item.id)
-                            ? "text-gray-700"
-                            : "text-gray-600"
-                        }`}
-                      >
-                        {/* Date */}
-                        <div className="flex justify-between items-center">
-                          <span className="font-medium">Date:</span>
-                          <span>{item.deadline}</span>
+                        <div className="text-gray-700">
+                          {item.title}
+                        </div>
+                        <div className="text-gray-700">
+                          {item.deadline}
                         </div>
 
-                        {/* Category */}
-                        <div className="flex justify-between items-center">
-                          <span className="font-medium">Category:</span>
+                        <div className="relative dropdown-cell">
                           <div
                             onClick={(e) => {
                               e.stopPropagation();
@@ -601,43 +566,13 @@ const ToDoContent: React.FC = () => {
                                   field: "category",
                                 });
                             }}
-                            className={`cursor-pointer px-2 py-1 rounded text-xs font-medium ${
-                              selectedItems.includes(item.id)
-                                ? "bg-gray-300 text-gray-700"
-                                : "bg-gray-100 text-gray-700 hover:bg-gray-200"
-                            }`}
+                            className="cursor-pointer hover:bg-gray-200 bg-gray-100 px-3 py-1.5 rounded transition inline-block"
                           >
                             {item.category}
-                            {editingCell?.id === item.id &&
-                              editingCell?.field === "category" && (
-                                <div className="absolute top-full left-0 mt-1 bg-white border border-gray-300 rounded shadow-lg z-20 w-48 max-h-100 overflow-y-auto">
-                                  <div className="py-1 text-xs text-gray-500 px-2 border-b">
-                                    Choose one
-                                  </div>
-                                  {categoryOptions.map((option) => (
-                                    <button
-                                      key={option}
-                                      onClick={(e) => {
-                                        e.stopPropagation();
-                                        handleUpdateCell(
-                                          item.id,
-                                          "category",
-                                          option
-                                        );
-                                      }}
-                                      className="w-full text-left px-2 py-1.5 text-sm hover:bg-gray-100"
-                                    >
-                                      {option}
-                                    </button>
-                                  ))}
-                                </div>
-                              )}
                           </div>
                         </div>
 
-                        {/* Priority */}
-                        <div className="flex justify-between items-center">
-                          <span className="font-medium">Priority:</span>
+                        <div className="relative dropdown-cell">
                           <div
                             onClick={(e) => {
                               e.stopPropagation();
@@ -647,8 +582,89 @@ const ToDoContent: React.FC = () => {
                                   field: "priority",
                                 });
                             }}
-                            className="cursor-pointer"
+                            className="cursor-pointer inline-block"
                           >
+                            <span
+                              className={`inline-block px-3 py-1 rounded-md text-xs font-medium ${getPriorityColor(
+                                item.priority
+                              )} hover:opacity-80 transition`}
+                            >
+                              {item.priority}
+                            </span>
+                          </div>
+                        </div>
+
+                        <div className="truncate text-gray-600">
+                          {item.description}
+                        </div>
+                      </motion.div>
+                    ))}
+                  </div>
+
+                  <div className="md:hidden space-y-3 p-4">
+                    {displayTodos.map((item) => (
+                      <motion.div
+                        layout
+                        transition={{ layout: { duration: 0.28 } }}
+                        key={item.id}
+                        onClick={() => openActivityModal(item)}
+                        className={`row-transition p-4 rounded-lg border-2 ${
+                          selectedItems.includes(item.id)
+                            ? "bg-gray-200 border-gray-300 row-completed"
+                            : "bg-white border-gray-200 hover:border-gray-300"
+                        }`}
+                      >
+                        <div className="flex items-start gap-3 mb-3">
+                          <input
+                            type="checkbox"
+                            checked={selectedItems.includes(item.id)}
+                            onChange={() => handleSelectItem(item.id)}
+                            onClick={(e) => e.stopPropagation()}
+                            className="w-5 h-5 cursor-pointer accent-[#161D36] mt-0.5 shrink-0"
+                          />
+                          <div className="flex-1 min-w-0">
+                            <h3
+                              className={`font-semibold text-sm ${
+                                selectedItems.includes(item.id)
+                                  ? "text-gray-700"
+                                  : "text-gray-900"
+                              }`}
+                            >
+                              {item.title}
+                            </h3>
+                            <span
+                              className={`inline-block mt-1 px-2 py-1 text-xs font-medium rounded ${
+                                selectedItems.includes(item.id)
+                                  ? "bg-gray-300 text-gray-700"
+                                  : "bg-gray-100 text-gray-600"
+                              }`}
+                            >
+                              {item.status}
+                            </span>
+                          </div>
+                        </div>
+
+                        <div
+                          className={`space-y-2 text-sm ${
+                            selectedItems.includes(item.id)
+                              ? "text-gray-700"
+                              : "text-gray-600"
+                          }`}
+                        >
+                          <div className="flex justify-between items-center">
+                            <span className="font-medium">Date:</span>
+                            <span>{item.deadline}</span>
+                          </div>
+
+                          <div className="flex justify-between items-center">
+                            <span className="font-medium">Category:</span>
+                            <div className="cursor-pointer px-2 py-1 rounded text-xs font-medium bg-gray-100 text-gray-700">
+                              {item.category}
+                            </div>
+                          </div>
+
+                          <div className="flex justify-between items-center">
+                            <span className="font-medium">Priority:</span>
                             <span
                               className={`inline-block px-2 py-1 rounded text-xs font-medium ${getPriorityColor(
                                 item.priority
@@ -656,62 +672,31 @@ const ToDoContent: React.FC = () => {
                             >
                               {item.priority}
                             </span>
-                            {editingCell?.id === item.id &&
-                              editingCell?.field === "priority" && (
-                                <div className="absolute top-full left-0 mt-1 bg-white border border-gray-300 rounded shadow-lg z-20 min-w-max">
-                                  <div className="py-1 text-xs text-gray-500 px-2 border-b whitespace-nowrap">
-                                    Choose one
-                                  </div>
-                                  {priorityOptions.map((option) => (
-                                    <button
-                                      key={option}
-                                      onClick={(e) => {
-                                        e.stopPropagation();
-                                        handleUpdateCell(
-                                          item.id,
-                                          "priority",
-                                          option
-                                        );
-                                      }}
-                                      className="w-full text-left px-2 py-1.5 text-sm hover:bg-gray-100"
-                                    >
-                                      <span
-                                        className={`inline-block px-3 py-1 rounded-md text-xs font-medium ${getPriorityColor(
-                                          option
-                                        )}`}
-                                      >
-                                        {option}
-                                      </span>
-                                    </button>
-                                  ))}
-                                </div>
-                              )}
                           </div>
                         </div>
-                      </div>
 
-                      {/* Description */}
-                      <div className="mt-3 pt-3 border-t border-gray-200">
-                        <p
-                          className={`text-xs leading-relaxed ${
-                            selectedItems.includes(item.id)
-                              ? "text-gray-700"
-                              : "text-gray-500"
-                          }`}
-                        >
-                          {item.description}
-                        </p>
-                      </div>
-                    </motion.div>
-                  ))}
+                        <div className="mt-3 pt-3 border-t border-gray-200">
+                          <p
+                            className={`text-xs leading-relaxed ${
+                              selectedItems.includes(item.id)
+                                ? "text-gray-700"
+                                : "text-gray-500"
+                            }`}
+                          >
+                            {item.description}
+                          </p>
+                        </div>
+                      </motion.div>
+                    ))}
+                  </div>
                 </div>
-              </div>
-            )}
+              )}
+            </div>
           </div>
-        </div>
+        )}
       </div>
 
-      {/* Bottom section - add button */}
+      {/* Bottom section */}
       <div className="shrink-0 bg-white border-t border-gray-200 p-6">
         <button
           onClick={() => setIsSidebarOpen(true)}
@@ -727,7 +712,9 @@ const ToDoContent: React.FC = () => {
         isOpen={isSidebarOpen}
         onClose={() => setIsSidebarOpen(false)}
         onSubmit={handleSubmitToDo}
+        onSuccess={refetch}
       />
+
       {/* ToDo Detail Sidebar */}
       <ToDoDetailSidebar
         isOpen={isModalOpen}

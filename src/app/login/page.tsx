@@ -11,6 +11,7 @@ import {
   EyeSlashIcon,
 } from "@heroicons/react/24/outline";
 import { useAuth } from "@/lib/hooks/useAuth";
+import { LoadingSpinner } from "@/components/LoadingSpinner";
 
 export default function LoginPage() {
   const router = useRouter();
@@ -24,7 +25,7 @@ export default function LoginPage() {
     const token = localStorage.getItem("authToken");
     if (token) {
       redirectedRef.current = true;
-      router.push("/todo");
+      router.push("/streak");
     }
   }, [router]);
 
@@ -66,16 +67,8 @@ export default function LoginPage() {
 
     const result = await login(formData);
     if (result) {
-      // ✅ Check if email is verified
-      if (!result.verified) {
-        // Email not verified - redirect to verify-email page
-        router.push(
-          `/verify-email?email=${encodeURIComponent(formData.email)}`
-        );
-      } else {
-        // Email verified - redirect to dashboard
-        router.push("/todo");
-      }
+      // Redirect to streak page
+      router.push("/streak");
     }
   };
 
@@ -176,9 +169,16 @@ export default function LoginPage() {
             <button
               type="submit"
               disabled={isLoading}
-              className="w-full py-3 bg-white text-[#0f1a31] font-semibold rounded-lg hover:bg-white/90 transition disabled:opacity-50 disabled:cursor-not-allowed"
+              className="w-full py-3 bg-white text-[#0f1a31] font-semibold rounded-lg hover:bg-white/90 transition disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
             >
-              {isLoading ? "Signing in..." : "Sign In"}
+              {isLoading ? (
+                <>
+                  <LoadingSpinner />
+                  <span>Signing in...</span>
+                </>
+              ) : (
+                "Sign In"
+              )}
             </button>
 
             {/* Register Link */}
@@ -411,9 +411,16 @@ export default function LoginPage() {
                 <button
                   type="submit"
                   disabled={isLoading}
-                  className="mt-6 w-full rounded-md bg-[#0f1a31] px-4 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-[#101c36] transition disabled:opacity-50 disabled:cursor-not-allowed"
+                  className="mt-6 w-full rounded-md bg-[#0f1a31] px-4 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-[#101c36] transition disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
                 >
-                  {isLoading ? "Logging in..." : "Login"}
+                  {isLoading ? (
+                    <>
+                      <LoadingSpinner />
+                      <span>Logging in...</span>
+                    </>
+                  ) : (
+                    "Login"
+                  )}
                 </button>
 
                 {/* Register Link */}

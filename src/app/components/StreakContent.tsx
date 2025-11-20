@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useMemo } from "react";
+import React, { useState, useMemo, useEffect } from "react";
 import { AnimatePresence } from "framer-motion";
 import AddActivity from "./AddActivity";
 import StreakSearchBar from "./StreakSearchBar";
@@ -8,6 +8,7 @@ import ActivityItem from "./ActivityItem";
 import StreakWeeklyColumn from "./StreakWeeklyColumn";
 import StreakTimerModal from "./StreakTimerModal";
 import StreakDetailSidebar from "./StreakDetailSidebar";
+import StreakCompletionModal from "./StreakCompletionModal";
 import { StreakEntry } from "./StreakTypes";
 import { useStreaks } from "@/lib/hooks/useStreaks";
 import type { Streak } from "@/lib/hooks/useStreaks";
@@ -20,20 +21,7 @@ interface BreakSession {
   type: "completed" | "skipped";
 }
 
-const sampleEntries: StreakEntry[] = [
-  {
-    id: 1,
-    title: "Sports",
-    category: "Sports",
-    subcategory: "Basketball",
-    totalMinutes: 30,
-    breakTime: "10 mins",
-    description: "Duration 30 min - Break 10 min - Streak 6",
-    lastUpdated: new Date().toISOString(),
-    status: "Not Started",
-    days: ["Saturday", "Sunday"],
-  },
-];
+const sampleEntries: StreakEntry[] = [];
 
 interface StreakContentProps {
   onOpenAddActivity?: () => void;
@@ -49,28 +37,82 @@ export default function StreakContent({}: StreakContentProps) {
   const [timerFor, setTimerFor] = useState<StreakEntry | null>(null);
   const [detailEntry, setDetailEntry] = useState<StreakEntry | null>(null);
   const [detailOpen, setDetailOpen] = useState(false);
+  const [completionOpen, setCompletionOpen] = useState(false);
+  const [completionStreakId, setCompletionStreakId] = useState<number | null>(null);
+  const [completionStreakTitle, setCompletionStreakTitle] = useState("");
+  const [allDays, setAllDays] = useState<Array<{ id: number; name: string }>>([]);
+
+  // Fetch all days for mapping
+  useEffect(() => {
+    const fetchDays = async () => {
+      try {
+        const response = await fetch("/api/days");
+        if (response.ok) {
+          const days = await response.json();
+          setAllDays(days);
+        }
+      } catch (error) {
+        console.error("Failed to fetch days:", error);
+      }
+    };
+    fetchDays();
+  }, []);
 
   // Fetch streaks from API - optional integration
-  const { data: streaks } = useStreaks();
+  const { data: streaks, refetch } = useStreaks();
 
   // Memoize converted entries from API data
   const apiEntries = useMemo(() => {
     if (streaks && streaks.length > 0) {
-      return streaks.map((streak: Streak) => ({
-        id: streak.id,
-        title: streak.name,
-        category: streak.category,
-        subcategory: "",
-        totalMinutes: streak.focusMinutes,
-        breakTime: `${streak.breakMinutes} mins`,
-        description: streak.description || "",
-        lastUpdated: streak.updatedAt,
-        status: streak.status,
-        days: [],
-      }));
+      return streaks.map((streak: any) => {
+        // Parse dayIds if it's a JSON string
+        let dayIds: number[] = [];
+        if (streak.dayIds) {
+          if (typeof streak.dayIds === 'string') {
+            try {
+              dayIds = JSON.parse(streak.dayIds);
+            } catch {
+              dayIds = [];
+            }
+          } else if (Array.isArray(streak.dayIds)) {
+            dayIds = streak.dayIds;
+          }
+        }
+
+        // Get day names from dayIds using the allDays mapping
+        const days: string[] = [];
+        if (dayIds.length > 0 && allDays.length > 0) {
+          // Map dayIds to day names
+          dayIds.forEach((dayId) => {
+            const dayName = allDays.find((d) => d.id === dayId)?.name;
+            if (dayName) days.push(dayName);
+          });
+        } else if (streak.day?.name) {
+          // Fallback to single day if available
+          days.push(streak.day.name);
+        }
+
+        return {
+          id: streak.id,
+          title: streak.title || "",
+          category: streak.category?.name || "",
+          categoryId: streak.categoryId,
+          subcategory: streak.subCategory?.name || "",
+          subCategoryId: streak.subCategoryId,
+          dayId: streak.dayId,
+          dayIds: dayIds,
+          totalMinutes: streak.totalTime || 0,
+          breakTime: `${streak.breakTime || 0} mins`,
+          breakCount: streak.breakCount || 0,
+          description: streak.description || "",
+          lastUpdated: streak.updatedAt,
+          status: streak.status,
+          days: days.length > 0 ? days : [],
+        };
+      });
     }
     return [];
-  }, [streaks]);
+  }, [streaks, allDays]);
 
   // Use API entries if available, otherwise manual entries
   // This avoids setState in effects
@@ -84,7 +126,7 @@ export default function StreakContent({}: StreakContentProps) {
   // Filter entries by search query
   const filteredEntries = useMemo(() => {
     return entries.filter((e) =>
-      e.title.toLowerCase().includes(searchQuery.toLowerCase())
+      (e.title ?? "").toLowerCase().includes(searchQuery.toLowerCase())
     );
   }, [entries, searchQuery]);
 
@@ -120,8 +162,9 @@ export default function StreakContent({}: StreakContentProps) {
     setDetailEntry(null);
   };
 
-  const parseBreakMinutes = (breakTime?: string): number => {
+  const parseBreakMinutes = (breakTime?: string | number): number => {
     if (!breakTime) return 5;
+    if (typeof breakTime === "number") return breakTime;
     const match = breakTime.match(/\d+/);
     return match ? parseInt(match[0], 10) : 5;
   };
@@ -129,6 +172,30 @@ export default function StreakContent({}: StreakContentProps) {
   const handleStart = (entry: StreakEntry) => {
     setTimerFor(entry);
     setTimerOpen(true);
+
+    // Sync breakCount to database when activity starts
+    if (entry.id && typeof entry.id === "number" && entry.breakCount !== undefined) {
+      const authToken = localStorage.getItem("authToken");
+      if (authToken) {
+        fetch(`/api/streaks/${entry.id}`, {
+          method: "PATCH",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${authToken}`,
+          },
+          body: JSON.stringify({
+            breakCount: entry.breakCount,
+          }),
+        })
+          .then((res) => res.json())
+          .then((data) => {
+            console.log("breakCount synced:", data);
+          })
+          .catch((err) => {
+            console.error("Failed to sync breakCount:", err);
+          });
+      }
+    }
   };
 
   const handleFinishTimer = (
@@ -184,6 +251,14 @@ export default function StreakContent({}: StreakContentProps) {
 
     setEntries((prev) => [...prev, payload]);
     setTimerOpen(false);
+    
+    // Show completion modal for image upload and AI verification
+    if (timerFor.id && typeof timerFor.id === "number") {
+      setCompletionStreakId(timerFor.id);
+      setCompletionStreakTitle(timerFor.title);
+      setCompletionOpen(true);
+    }
+    
     setTimerFor(null);
   };
 
@@ -258,69 +333,84 @@ export default function StreakContent({}: StreakContentProps) {
 
       {/* Main content area - scrollable */}
       <div className="flex-1 overflow-auto bg-white p-6">
-        {/* Blog Tab - Responsive grid */}
-        {tab === "blog" && (
-          <div>
-            {filteredEntries.length > 0 ? (
-              <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4">
-                {filteredEntries.map((entry) => (
-                  <div
-                    key={entry.id}
-                    style={{ width: "100%", aspectRatio: "1 / 1" }}
-                  >
-                    <ActivityItem
-                      entry={entry}
+        {/* Empty State */}
+        {filteredEntries.length === 0 ? (
+          <div className="flex flex-col items-center justify-center h-full">
+            <div className="text-center">
+              <div className="text-gray-400 mb-4 text-5xl">🎯</div>
+              <h3 className="text-gray-600 font-semibold mb-2">No streaks yet</h3>
+              <p className="text-gray-500 text-sm mb-6">
+                Create your first streak to get started
+              </p>
+              <button
+                onClick={() => setOpenAdd(true)}
+                className="px-6 py-2 bg-[#161D36] text-white rounded-lg text-sm font-medium hover:bg-[#1a2140] transition"
+              >
+                Add Activity
+              </button>
+            </div>
+          </div>
+        ) : (
+          <>
+            {/* Blog Tab - Responsive grid */}
+            {tab === "blog" && (
+              <div>
+                <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4">
+                  {filteredEntries.map((entry) => (
+                    <div
+                      key={entry.id}
+                      style={{ width: "100%", aspectRatio: "1 / 1" }}
+                    >
+                      <ActivityItem
+                        entry={entry}
+                        onOpen={openDetail}
+                        onStart={handleStart}
+                      />
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* Weekly Tab - Single scroll container with sticky header */}
+            {tab === "weekly" && (
+              <div className="overflow-x-auto flex-1">
+                {/* Sticky day headers row - inside scroll container */}
+                <div
+                  className="flex gap-6 pb-4 mb-4 border-b border-gray-300 bg-white"
+                  style={{
+                    position: "sticky",
+                    top: 0,
+                    zIndex: 30,
+                    minWidth: "fit-content",
+                  }}
+                >
+                  {weeklyGrouped.map(({ day }) => (
+                    <div
+                      key={`header-${day}`}
+                      className="text-center"
+                      style={{ minWidth: "220px", flexShrink: 0 }}
+                    >
+                      <h3 className="text-sm font-semibold text-gray-900">{day}</h3>
+                    </div>
+                  ))}
+                </div>
+
+                {/* Activities container - flex row, horizontally overflowing */}
+                <div className="flex gap-6 pb-4">
+                  {weeklyGrouped.map(({ day, activities }) => (
+                    <StreakWeeklyColumn
+                      key={day}
+                      day={day}
+                      activities={activities}
                       onOpen={openDetail}
                       onStart={handleStart}
                     />
-                  </div>
-                ))}
-              </div>
-            ) : (
-              <div className="text-center py-12 text-gray-400">
-                <p>No activities found</p>
+                  ))}
+                </div>
               </div>
             )}
-          </div>
-        )}
-
-        {/* Weekly Tab - Single scroll container with sticky header */}
-        {tab === "weekly" && (
-          <div className="overflow-x-auto flex-1">
-            {/* Sticky day headers row - inside scroll container */}
-            <div
-              className="flex gap-6 pb-4 mb-4 border-b border-gray-300 bg-white"
-              style={{
-                position: "sticky",
-                top: 0,
-                zIndex: 30,
-                minWidth: "fit-content",
-              }}
-            >
-              {weeklyGrouped.map(({ day }) => (
-                <div
-                  key={`header-${day}`}
-                  className="text-center"
-                  style={{ minWidth: "220px", flexShrink: 0 }}
-                >
-                  <h3 className="text-sm font-semibold text-gray-900">{day}</h3>
-                </div>
-              ))}
-            </div>
-
-            {/* Activities container - flex row, horizontally overflowing */}
-            <div className="flex gap-6 pb-4">
-              {weeklyGrouped.map(({ day, activities }) => (
-                <StreakWeeklyColumn
-                  key={day}
-                  day={day}
-                  activities={activities}
-                  onOpen={openDetail}
-                  onStart={handleStart}
-                />
-              ))}
-            </div>
-          </div>
+          </>
         )}
       </div>
 
@@ -341,7 +431,7 @@ export default function StreakContent({}: StreakContentProps) {
           <AddActivity
             isOpen={openAdd}
             onClose={() => setOpenAdd(false)}
-            onSave={handleSaveActivity}
+            onSuccess={refetch}
           />
         )}
       </AnimatePresence>
@@ -355,7 +445,7 @@ export default function StreakContent({}: StreakContentProps) {
             title={timerFor.title}
             focusMinutes={timerFor.totalMinutes}
             breakMinutes={parseBreakMinutes(timerFor.breakTime)}
-            initialBreakRepetitions={1}
+            initialBreakRepetitions={timerFor.breakCount || 1}
             streakId={timerFor.id}
             onComplete={handleFinishTimer}
           />
@@ -369,6 +459,18 @@ export default function StreakContent({}: StreakContentProps) {
         entry={detailEntry}
         onDelete={handleDelete}
         onEdit={handleEdit}
+      />
+
+      {/* Streak Completion Modal */}
+      <StreakCompletionModal
+        isOpen={completionOpen}
+        onClose={() => setCompletionOpen(false)}
+        streakId={completionStreakId || 0}
+        streakTitle={completionStreakTitle}
+        onVerificationComplete={() => {
+          setCompletionOpen(false);
+          refetch();
+        }}
       />
     </div>
   );

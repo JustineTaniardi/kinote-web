@@ -1,11 +1,20 @@
 "use client";
 
 import React, { useEffect, useState } from "react";
-import Image from "next/image";
 import SidebarWrapper from "./SidebarWrapper";
 import { StreakEntry, ProgressStep } from "./StreakTypes";
 import { Trash2, Edit2, Check, X } from "lucide-react";
+import { showSuccess, showError } from "@/lib/toast";
+import {
+  XMarkIcon,
+  FireIcon,
+  Squares2X2Icon,
+  ClockIcon,
+  CalendarDaysIcon,
+} from "@heroicons/react/24/outline";
 import { CATEGORIES, SUBCATEGORIES } from "./ActivityCategories";
+import ConfirmationModal from "./ConfirmationModal";
+import StreakHistoryModal from "./StreakHistoryModal";
 
 interface Props {
   isOpen: boolean;
@@ -26,19 +35,74 @@ export default function StreakDetailSidebar({
   const [isEditing, setIsEditing] = useState(false);
   const [showHistoryModal, setShowHistoryModal] = useState(false);
   const [selectedStep, setSelectedStep] = useState<number | null>(null);
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [isDeleting, setIsDeleting] = useState(false);
+  const [latestHistory, setLatestHistory] = useState<any>(null);
   const [editTitle, setEditTitle] = useState(entry?.title || "");
   const [editCategory, setEditCategory] = useState(entry?.category ?? "");
   const [editSubcategory, setEditSubcategory] = useState(
     entry?.subcategory ?? ""
   );
   const [editDays, setEditDays] = useState<string[]>(entry?.days || []);
+  const [editDayIds, setEditDayIds] = useState<number[]>([]);
+  const [allDays, setAllDays] = useState<Array<{ id: number; name: string }>>([]);
   const [editTotalTime, setEditTotalTime] = useState(
     String(entry?.totalMinutes || "") || ""
   );
   const [editBreakTime, setEditBreakTime] = useState(entry?.breakTime || "");
+  const [editBreakCount, setEditBreakCount] = useState(
+    String(entry?.breakCount || "0") || "0"
+  );
   const [editDescription, setEditDescription] = useState(
     entry?.description || ""
   );
+  const [historyCountData, setHistoryCountData] = useState(0);
+
+  // Fetch all days on mount
+  useEffect(() => {
+    const fetchDays = async () => {
+      try {
+        const response = await fetch("/api/days");
+        if (response.ok) {
+          const days = await response.json();
+          setAllDays(days);
+        }
+      } catch (error) {
+        console.error("Failed to fetch days:", error);
+      }
+    };
+    fetchDays();
+  }, []);
+
+  // Fetch latest history entry
+  useEffect(() => {
+    const fetchLatestHistory = async () => {
+      if (!entry?.id) return;
+      
+      try {
+        const token = localStorage.getItem("authToken");
+        const response = await fetch(
+          `/api/streaks/${entry.id}/history?page=1&limit=1`,
+          {
+            headers: { Authorization: `Bearer ${token}` },
+          }
+        );
+        
+        if (response.ok) {
+          const result = await response.json();
+          if (result.data && result.data.length > 0) {
+            setLatestHistory(result.data[0]);
+          }
+          // Set the actual history count from API response
+          setHistoryCountData(result.total || 0);
+        }
+      } catch (error) {
+        console.error("Failed to fetch latest history:", error);
+      }
+    };
+    
+    fetchLatestHistory();
+  }, [entry?.id]);
 
   useEffect(() => {
     if (isOpen) {
@@ -53,7 +117,23 @@ export default function StreakDetailSidebar({
         setEditDays(entry.days || []);
         setEditTotalTime(String(entry.totalMinutes || ""));
         setEditBreakTime(entry.breakTime || "");
+        setEditBreakCount(String(entry.breakCount || "0"));
         setEditDescription(entry.description || "");
+        
+        // Initialize editDayIds - try to parse from entry if available
+        // If entry has dayIds as JSON (from API), parse them; otherwise convert from day names
+        if (entry.dayIds && typeof entry.dayIds === 'string') {
+          try {
+            const parsed = JSON.parse(entry.dayIds);
+            setEditDayIds(Array.isArray(parsed) ? parsed : []);
+          } catch {
+            setEditDayIds([]);
+          }
+        } else if (Array.isArray(entry.dayIds)) {
+          setEditDayIds(entry.dayIds as number[]);
+        } else {
+          setEditDayIds([]);
+        }
       }
     } else {
       const t = setTimeout(() => setMounted(false), 300);
@@ -67,10 +147,17 @@ export default function StreakDetailSidebar({
     ? SUBCATEGORIES[editCategory as keyof typeof SUBCATEGORIES] || []
     : [];
 
-  // Mock history data
-  const historyCount = 7;
-  const historyDate = "12/11/2025";
-  const historyTime = "10:34 - 11:44";
+  // History data from API fetch - use the fetched count instead of entry.streakCount
+  const historyCount = historyCountData;
+  const historyDate = latestHistory?.createdAt 
+    ? new Date(latestHistory.createdAt).toLocaleDateString("id-ID")
+    : "Not started";
+  const historyTime = latestHistory?.createdAt 
+    ? new Date(latestHistory.createdAt).toLocaleTimeString("id-ID", {
+        hour: "2-digit",
+        minute: "2-digit",
+      })
+    : "–";
 
   // Mock progress steps template data
   const mockProgressSteps: ProgressStep[] = entry.progressSteps || [
@@ -103,28 +190,95 @@ export default function StreakDetailSidebar({
     },
   ];
 
-  const handleDelete = () => {
-    if (
-      window.confirm(`Delete "${entry.title}"? This action cannot be undone.`)
-    ) {
-      onDelete?.(entry.id);
-      onClose();
+  const handleDelete = async () => {
+    setIsDeleting(true);
+    try {
+      const token = localStorage.getItem("authToken");
+      const response = await fetch(`/api/streaks/${entry.id}`, {
+        method: "DELETE",
+        headers: { Authorization: `Bearer ${token}` },
+      });
+
+      if (response.ok) {
+        setShowDeleteConfirm(false);
+        onDelete?.(entry.id);
+        onClose();
+        showSuccess("Streak deleted successfully!");
+        // Refresh the page after a short delay
+        setTimeout(() => {
+          window.location.reload();
+        }, 500);
+      } else {
+        showError("Failed to delete streak");
+      }
+    } catch (error) {
+      console.error("Delete error:", error);
+      showError("Error deleting streak");
+    } finally {
+      setIsDeleting(false);
     }
   };
 
-  const handleSave = () => {
-    const updated: StreakEntry = {
-      ...entry,
-      title: editTitle,
-      category: editCategory,
-      subcategory: editSubcategory,
-      days: editDays,
-      totalMinutes: parseInt(editTotalTime) || 0,
-      breakTime: editBreakTime,
-      description: editDescription,
-    };
-    onEdit?.(updated);
-    setIsEditing(false);
+  const handleSave = async () => {
+    try {
+      // Extract category ID from category name or get from entry
+      let categoryId = entry.categoryId || 1;
+      
+      // Extract subcategory ID if available
+      let subCategoryId = entry.subCategoryId || null;
+
+      const token = localStorage.getItem("authToken");
+      const response = await fetch(`/api/streaks/${entry.id}`, {
+        method: "PATCH",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({
+          title: editTitle,
+          categoryId,
+          subCategoryId,
+          dayIds: editDayIds,
+          totalTime: parseInt(editTotalTime) || 0,
+          breakTime: parseInt(String(editBreakTime).replace(/\D/g, "")) || 0,
+          breakCount: parseInt(editBreakCount) || 0,
+          description: editDescription,
+        }),
+      });
+
+      if (response.ok) {
+        // Convert day IDs back to day names for display
+        const dayNames = allDays
+          .filter((d) => editDayIds.includes(d.id))
+          .map((d) => d.name);
+
+        const updated: StreakEntry = {
+          ...entry,
+          title: editTitle,
+          category: editCategory,
+          subcategory: editSubcategory,
+          days: dayNames,
+          dayIds: editDayIds as any,
+          totalMinutes: parseInt(editTotalTime) || 0,
+          breakTime: editBreakTime,
+          breakCount: parseInt(editBreakCount) || 0,
+          description: editDescription,
+        };
+        onEdit?.(updated);
+        setIsEditing(false);
+        
+        // Show success message briefly then reload to get fresh DB data
+        showSuccess("Activity updated successfully!");
+        setTimeout(() => {
+          window.location.reload();
+        }, 500);
+      } else {
+        showError("Failed to save streak");
+      }
+    } catch (error) {
+      console.error("Save error:", error);
+      showError("Error saving streak");
+    }
   };
 
   const handleCancel = () => {
@@ -132,8 +286,24 @@ export default function StreakDetailSidebar({
     setEditCategory(entry.category ?? "");
     setEditSubcategory(entry.subcategory ?? "");
     setEditDays(entry.days || []);
+    
+    // Reset dayIds
+    if (entry.dayIds && typeof entry.dayIds === 'string') {
+      try {
+        const parsed = JSON.parse(entry.dayIds);
+        setEditDayIds(Array.isArray(parsed) ? parsed : []);
+      } catch {
+        setEditDayIds([]);
+      }
+    } else if (Array.isArray(entry.dayIds)) {
+      setEditDayIds(entry.dayIds as number[]);
+    } else {
+      setEditDayIds([]);
+    }
+    
     setEditTotalTime(String(entry.totalMinutes || ""));
     setEditBreakTime(entry.breakTime || "");
+    setEditBreakCount(String(entry.breakCount || "0"));
     setEditDescription(entry.description || "");
     setIsEditing(false);
   };
@@ -158,14 +328,9 @@ export default function StreakDetailSidebar({
                   <h2 className="text-2xl font-bold text-gray-900 truncate">
                     {entry.title}
                   </h2>
-                  <div className="flex items-center gap-1.5 bg-gray-100 px-3 py-1 rounded-full shrink-0 border border-gray-300">
-                    <Image
-                      src="/img/add-activity/streak_icon.png"
-                      width={16}
-                      height={16}
-                      alt="streak"
-                    />
-                    <span className="text-sm font-bold text-gray-900">8</span>
+                  <div className="flex items-center gap-1.5 bg-orange-50 px-3 py-1 rounded-full shrink-0 border border-orange-200">
+                    <FireIcon className="w-4 h-4 text-orange-500" />
+                    <span className="text-sm font-bold text-orange-600">{historyCountData}</span>
                   </div>
                 </>
               )}
@@ -195,201 +360,193 @@ export default function StreakDetailSidebar({
       </div>
 
       {/* Content Section */}
-      <div className="px-6 py-6 flex-1 space-y-4 overflow-y-auto">
+      <div className="px-6 py-6 flex-1 space-y-5 overflow-y-auto">
         {/* Category */}
-        <div className="bg-gray-50 rounded-2xl p-4 flex items-center gap-3">
-          <Image
-            src="/img/add-activity/category_icon.png"
-            width={20}
-            height={20}
-            alt="category"
-            className="shrink-0"
-          />
-          <div className="flex-1 min-w-0">
-            {isEditing ? (
-              <>
-                <p className="text-xs text-gray-500">Category</p>
-                <select
-                  value={editCategory}
-                  onChange={(e) => {
-                    setEditCategory(e.target.value);
-                    setEditSubcategory("");
-                  }}
-                  className="w-full bg-transparent outline-none text-sm text-gray-900 font-semibold mt-1"
-                >
-                  <option value="">Select Category</option>
-                  {CATEGORIES.map((cat) => (
-                    <option key={cat} value={cat}>
-                      {cat}
-                    </option>
-                  ))}
-                </select>
-              </>
-            ) : (
-              <>
-                <p className="text-xs text-gray-500">Category</p>
-                <p className="text-sm font-semibold text-gray-900">
-                  {entry.category || "Academic"}
-                </p>
-              </>
-            )}
-          </div>
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-2">
+            Category
+          </label>
+          {isEditing ? (
+            <select
+              value={editCategory}
+              onChange={(e) => {
+                setEditCategory(e.target.value);
+                setEditSubcategory("");
+              }}
+              className="w-full border border-gray-300 rounded-lg px-4 py-2.5 text-sm bg-white outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+            >
+              <option value="">Select Category</option>
+              {CATEGORIES.map((cat) => (
+                <option key={cat} value={cat}>
+                  {cat}
+                </option>
+              ))}
+            </select>
+          ) : (
+            <div className="flex items-center gap-3 border border-gray-300 rounded-lg px-4 py-2.5 bg-white">
+              <Squares2X2Icon className="w-5 h-5 text-gray-600 shrink-0" />
+              <p className="text-sm font-medium text-gray-900">
+                {entry.category || "Academic"}
+              </p>
+            </div>
+          )}
         </div>
 
         {/* Sub Category */}
-        <div className="bg-gray-50 rounded-2xl p-4 flex items-center gap-3">
-          <Image
-            src="/img/add-activity/subcategory_icon.png"
-            width={20}
-            height={20}
-            alt="subcategory"
-            className="shrink-0"
-          />
-          <div className="flex-1 min-w-0">
-            {isEditing ? (
-              <>
-                <p className="text-xs text-gray-500">Sub Category</p>
-                <select
-                  value={editSubcategory}
-                  onChange={(e) => setEditSubcategory(e.target.value)}
-                  disabled={!editCategory}
-                  className="w-full bg-transparent outline-none text-sm text-gray-900 font-semibold mt-1 disabled:opacity-50"
-                >
-                  <option value="">Select Sub Category</option>
-                  {availableSubcategories.map((subcat) => (
-                    <option key={subcat} value={subcat}>
-                      {subcat}
-                    </option>
-                  ))}
-                </select>
-              </>
-            ) : (
-              <>
-                <p className="text-xs text-gray-500">Sub Category</p>
-                <p className="text-sm font-semibold text-gray-900">
-                  {entry.subcategory || "Programming"}
-                </p>
-              </>
-            )}
-          </div>
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-2">
+            Subcategory
+          </label>
+          {isEditing ? (
+            <select
+              value={editSubcategory}
+              onChange={(e) => setEditSubcategory(e.target.value)}
+              disabled={!editCategory}
+              className="w-full border border-gray-300 rounded-lg px-4 py-2.5 text-sm bg-white outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent disabled:opacity-50 disabled:bg-gray-100"
+            >
+              <option value="">Select Subcategory</option>
+              {availableSubcategories.map((subcat) => (
+                <option key={subcat} value={subcat}>
+                  {subcat}
+                </option>
+              ))}
+            </select>
+          ) : (
+            <div className="flex items-center gap-3 border border-gray-300 rounded-lg px-4 py-2.5 bg-white">
+              <Squares2X2Icon className="w-5 h-5 text-gray-600 shrink-0" />
+              <p className="text-sm font-medium text-gray-900">
+                {entry.subcategory || "Programming"}
+              </p>
+            </div>
+          )}
         </div>
 
-        {/* Days */}
-        <div className="bg-gray-50 rounded-2xl p-4 flex items-center gap-3">
-          <Image
-            src="/img/add-activity/hari_icon.png"
-            width={20}
-            height={20}
-            alt="days"
-            className="shrink-0"
-          />
-          <div className="flex-1 min-w-0">
-            {isEditing ? (
-              <>
-                <p className="text-xs text-gray-500">Days</p>
-                <input
-                  type="text"
-                  value={editDays?.join(", ") || ""}
-                  onChange={(e) =>
-                    setEditDays(e.target.value.split(",").map((d) => d.trim()))
-                  }
-                  className="w-full bg-transparent outline-none text-sm text-gray-900 font-semibold mt-1"
-                  placeholder="Saturday, Sunday"
-                />
-              </>
-            ) : (
-              <>
-                <p className="text-xs text-gray-500">Days</p>
-                <p className="text-sm font-semibold text-gray-900">
-                  {entry.days?.join(", ") || "Saturday, Sunday"}
-                </p>
-              </>
-            )}
-          </div>
+        {/* Day */}
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-2">
+            Days
+          </label>
+          {isEditing ? (
+            <div className="space-y-2">
+              {/* Show day options as checkboxes for multiple selection */}
+              <div className="flex flex-col gap-2">
+                {allDays.map((day) => (
+                  <label key={day.id} className="flex items-center gap-3 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={editDayIds.includes(day.id)}
+                      onChange={(e) => {
+                        if (e.target.checked) {
+                          setEditDayIds([...editDayIds, day.id]);
+                        } else {
+                          setEditDayIds(editDayIds.filter((id) => id !== day.id));
+                        }
+                      }}
+                      className="w-4 h-4 text-blue-600 focus:ring-2 focus:ring-blue-500 cursor-pointer"
+                    />
+                    <span className="text-sm text-gray-700">{day.name}</span>
+                  </label>
+                ))}
+              </div>
+            </div>
+          ) : (
+            <div className="flex items-center gap-3 border border-gray-300 rounded-lg px-4 py-2.5 bg-white">
+              <CalendarDaysIcon className="w-5 h-5 text-gray-600 shrink-0" />
+              <p className="text-sm font-medium text-gray-900">
+                {entry.days?.length ? entry.days.join(", ") : "Not set"}
+              </p>
+            </div>
+          )}
         </div>
-
-        {/* Repeat - removed as it doesn't exist in StreakEntry */}
 
         {/* Total Time */}
-        <div className="bg-gray-50 rounded-2xl p-4 flex items-center gap-3">
-          <Image
-            src="/img/add-activity/total_time_icon.png"
-            width={20}
-            height={20}
-            alt="total time"
-            className="shrink-0"
-          />
-          <div className="flex-1 min-w-0">
-            {isEditing ? (
-              <>
-                <p className="text-xs text-gray-500">Total Time</p>
-                <input
-                  type="number"
-                  value={editTotalTime}
-                  onChange={(e) => setEditTotalTime(e.target.value)}
-                  className="w-full bg-transparent outline-none text-sm text-gray-900 font-semibold mt-1"
-                  placeholder="0"
-                />
-              </>
-            ) : (
-              <>
-                <p className="text-xs text-gray-500">Total Time</p>
-                <p className="text-sm font-semibold text-gray-900">
-                  {entry.totalMinutes || 0} menit
-                </p>
-              </>
-            )}
-          </div>
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-2">
+            Total Time (minutes)
+          </label>
+          {isEditing ? (
+            <input
+              type="number"
+              min="0"
+              value={editTotalTime}
+              onChange={(e) => setEditTotalTime(e.target.value)}
+              className="w-full border border-gray-300 rounded-lg px-4 py-2.5 text-sm bg-white outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              placeholder="0"
+            />
+          ) : (
+            <div className="flex items-center gap-3 border border-gray-300 rounded-lg px-4 py-2.5 bg-white">
+              <ClockIcon className="w-5 h-5 text-gray-600 shrink-0" />
+              <p className="text-sm font-medium text-gray-900">
+                {entry.totalMinutes || 0} minutes
+              </p>
+            </div>
+          )}
         </div>
 
-        {/* Break */}
-        <div className="bg-gray-50 rounded-2xl p-4 flex items-center gap-3">
-          <Image
-            src="/img/add-activity/break_icon.png"
-            width={20}
-            height={20}
-            alt="break"
-            className="shrink-0"
-          />
-          <div className="flex-1 min-w-0">
-            {isEditing ? (
-              <>
-                <p className="text-xs text-gray-500">Break</p>
-                <input
-                  type="text"
-                  value={editBreakTime}
-                  onChange={(e) => setEditBreakTime(e.target.value)}
-                  className="w-full bg-transparent outline-none text-sm text-gray-900 font-semibold mt-1"
-                  placeholder="10 menit"
-                />
-              </>
-            ) : (
-              <>
-                <p className="text-xs text-gray-500">Break</p>
-                <p className="text-sm font-semibold text-gray-900">
-                  {entry.breakTime || "10 menit"}
-                </p>
-              </>
-            )}
-          </div>
+        {/* Break Time */}
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-2">
+            Break Time (minutes)
+          </label>
+          {isEditing ? (
+            <input
+              type="number"
+              min="0"
+              value={String(editBreakTime).replace(/\D/g, "")}
+              onChange={(e) => setEditBreakTime(e.target.value)}
+              className="w-full border border-gray-300 rounded-lg px-4 py-2.5 text-sm bg-white outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              placeholder="10"
+            />
+          ) : (
+            <div className="flex items-center gap-3 border border-gray-300 rounded-lg px-4 py-2.5 bg-white">
+              <ClockIcon className="w-5 h-5 text-gray-600 shrink-0" />
+              <p className="text-sm font-medium text-gray-900">
+                {entry.breakTime || "0 minutes"}
+              </p>
+            </div>
+          )}
+        </div>
+
+        {/* Break Count */}
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-2">
+            Break Count (Repetitions)
+          </label>
+          {isEditing ? (
+            <input
+              type="number"
+              min="0"
+              value={editBreakCount}
+              onChange={(e) => setEditBreakCount(e.target.value)}
+              className="w-full border border-gray-300 rounded-lg px-4 py-2.5 text-sm bg-white outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              placeholder="0"
+            />
+          ) : (
+            <div className="flex items-center gap-3 border border-gray-300 rounded-lg px-4 py-2.5 bg-white">
+              <ClockIcon className="w-5 h-5 text-gray-600 shrink-0" />
+              <p className="text-sm font-medium text-gray-900">
+                {entry?.breakCount || "0"} repetitions
+              </p>
+            </div>
+          )}
         </div>
 
         {/* Description */}
-        <div className="mt-6 pt-4">
-          <p className="text-sm font-semibold text-gray-900 mb-3">
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-2">
             Description
-          </p>
+          </label>
           {isEditing ? (
             <textarea
               value={editDescription}
               onChange={(e) => setEditDescription(e.target.value)}
-              className="w-full bg-gray-50 rounded-2xl p-4 text-sm text-gray-900 outline-none border border-gray-200 focus:border-gray-400 resize-none"
+              className="w-full border border-gray-300 rounded-lg px-4 py-2.5 text-sm bg-white outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent resize-none"
               rows={4}
               placeholder="Add description..."
             />
           ) : (
-            <div className="bg-gray-50 rounded-2xl p-6 h-24 border border-dashed border-gray-300 flex items-center justify-center">
-              <p className="text-sm text-gray-400">
+            <div className="border border-gray-300 rounded-lg px-4 py-2.5 bg-white">
+              <p className="text-sm text-gray-900">
                 {entry.description || "No description added"}
               </p>
             </div>
@@ -402,13 +559,8 @@ export default function StreakDetailSidebar({
             onClick={() => setShowHistoryModal(true)}
             className="w-full bg-gray-50 rounded-2xl p-4 flex items-start gap-3 hover:bg-gray-100 transition border border-gray-200 cursor-pointer"
           >
-            <div className="flex items-center justify-center w-10 h-10 bg-gray-50 rounded-lg shrink-0 mt-0.5 border border-gray-200">
-              <Image
-                src="/img/add-activity/streak_icon.png"
-                width={20}
-                height={20}
-                alt="streak"
-              />
+            <div className="flex items-center justify-center w-10 h-10 bg-orange-50 rounded-lg shrink-0 mt-0.5 border border-orange-200">
+              <FireIcon className="w-5 h-5 text-orange-500" />
             </div>
             <div className="flex-1 min-w-0 text-left">
               <div className="flex items-center gap-2">
@@ -473,7 +625,7 @@ export default function StreakDetailSidebar({
       {/* Delete Button */}
       <div className="px-6 py-4 border-t border-gray-100 bg-white sticky bottom-0">
         <button
-          onClick={handleDelete}
+          onClick={() => setShowDeleteConfirm(true)}
           className="w-full flex items-center justify-center gap-2 px-4 py-3 bg-red-50 text-red-600 rounded-lg border border-red-200/50 hover:bg-red-100 transition-colors font-medium text-sm"
         >
           <Trash2 className="w-4 h-4" />
@@ -481,160 +633,7 @@ export default function StreakDetailSidebar({
         </button>
       </div>
 
-      {/* History Modal - Progress Steps */}
-      {showHistoryModal && (
-        <>
-          {/* Overlay */}
-          <div
-            className="fixed inset-0 bg-black/50 z-40 backdrop-blur-sm"
-            onClick={() => setShowHistoryModal(false)}
-          />
-          {/* Modal - Full Screen Overlay */}
-          <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-            <div className="bg-white rounded-3xl shadow-2xl w-full max-w-2xl max-h-[90vh] overflow-y-auto">
-              {/* Modal Header */}
-              <div className="px-8 py-6 border-b border-gray-100 sticky top-0 bg-white rounded-t-3xl flex items-start justify-between gap-4">
-                <div className="flex-1 min-w-0">
-                  <h3 className="text-2xl font-bold text-gray-900">
-                    {entry.title}
-                  </h3>
-                  <p className="text-sm text-gray-500 mt-1">
-                    Progress & Documentation
-                  </p>
-                </div>
-                <button
-                  onClick={() => setShowHistoryModal(false)}
-                  className="text-gray-400 hover:text-gray-600 transition p-2 shrink-0 hover:bg-gray-100 rounded-lg"
-                  aria-label="Close modal"
-                >
-                  <svg
-                    className="w-6 h-6"
-                    fill="none"
-                    stroke="currentColor"
-                    viewBox="0 0 24 24"
-                  >
-                    <path
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                      strokeWidth={2}
-                      d="M6 18L18 6M6 6l12 12"
-                    />
-                  </svg>
-                </button>
-              </div>
 
-              {/* Modal Content */}
-              <div className="px-8 py-8">
-                {/* Progress Steps List */}
-                <div className="space-y-4 mb-8">
-                  {!mockProgressSteps || mockProgressSteps.length === 0 ? (
-                    <div className="text-center py-12">
-                      <svg
-                        className="w-16 h-16 text-gray-300 mx-auto mb-3"
-                        fill="none"
-                        stroke="currentColor"
-                        viewBox="0 0 24 24"
-                      >
-                        <path
-                          strokeLinecap="round"
-                          strokeLinejoin="round"
-                          strokeWidth={1.5}
-                          d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"
-                        />
-                      </svg>
-                      <p className="text-gray-500 font-medium">
-                        No progress steps yet
-                      </p>
-                      <p className="text-sm text-gray-400 mt-1">
-                        Add your first step to document your progress
-                      </p>
-                    </div>
-                  ) : (
-                    mockProgressSteps.map((step, index) => (
-                      <button
-                        key={step.id}
-                        onClick={() => setSelectedStep(index)}
-                        className="w-full text-left bg-gray-50 hover:bg-gray-100 rounded-2xl overflow-hidden border border-gray-200 transition group"
-                      >
-                        <div className="flex gap-4 p-4">
-                          {/* Step Image */}
-                          <div className="w-24 h-24 bg-gray-200 rounded-lg shrink-0 overflow-hidden">
-                            {step.image ? (
-                              <>
-                                {/* eslint-disable-next-line @next/next/no-img-element */}
-                                <img
-                                  src={step.image}
-                                  alt={step.title}
-                                  className="w-full h-full object-cover"
-                                  style={{ width: "100%", height: "100%" }}
-                                />
-                              </>
-                            ) : (
-                              <div className="w-full h-full flex items-center justify-center bg-linear-to-br from-gray-100 to-gray-200">
-                                <svg
-                                  className="w-8 h-8 text-gray-400"
-                                  fill="none"
-                                  stroke="currentColor"
-                                  viewBox="0 0 24 24"
-                                >
-                                  <path
-                                    strokeLinecap="round"
-                                    strokeLinejoin="round"
-                                    strokeWidth={1.5}
-                                    d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"
-                                  />
-                                </svg>
-                              </div>
-                            )}
-                          </div>
-                          {/* Step Info */}
-                          <div className="flex-1 min-w-0">
-                            <p className="text-sm font-semibold text-gray-900 line-clamp-1">
-                              {step.title}
-                            </p>
-                            <p className="text-sm text-gray-600 line-clamp-2 mt-1">
-                              {step.description}
-                            </p>
-                            <p className="text-xs text-gray-400 mt-2">
-                              {new Date(step.createdAt).toLocaleDateString()}
-                            </p>
-                          </div>
-                          {/* Chevron */}
-                          <div className="flex items-center">
-                            <svg
-                              className="w-5 h-5 text-gray-400 group-hover:text-gray-600 transition"
-                              fill="none"
-                              stroke="currentColor"
-                              viewBox="0 0 24 24"
-                            >
-                              <path
-                                strokeLinecap="round"
-                                strokeLinejoin="round"
-                                strokeWidth={2}
-                                d="M9 5l7 7-7 7"
-                              />
-                            </svg>
-                          </div>
-                        </div>
-                      </button>
-                    ))
-                  )}
-                </div>
-              </div>
-
-              {/* Modal Footer */}
-              <div className="px-8 py-6 border-t border-gray-100 bg-gray-50 rounded-b-3xl sticky bottom-0 flex gap-3">
-                <button
-                  onClick={() => setShowHistoryModal(false)}
-                  className="flex-1 px-6 py-3 bg-gray-900 text-white rounded-lg text-sm font-semibold hover:bg-gray-800 transition"
-                >
-                  Done
-                </button>
-              </div>
-            </div>
-          </div>
-        </>
-      )}
 
       {/* Step Detail Modal */}
       {selectedStep !== null &&
@@ -642,7 +641,7 @@ export default function StreakDetailSidebar({
         mockProgressSteps[selectedStep] && (
           <>
             <div
-              className="fixed inset-0 bg-black/50 z-50 backdrop-blur-sm"
+              className="fixed inset-0 bg-black/20 z-50 backdrop-blur-sm"
               onClick={() => setSelectedStep(null)}
             />
             <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
@@ -828,6 +827,29 @@ export default function StreakDetailSidebar({
             </div>
           </>
         )}
+
+      {/* Delete Confirmation Modal */}
+      <ConfirmationModal
+        isOpen={showDeleteConfirm}
+        title="Delete Streak"
+        message={`Are you sure you want to delete "${entry.title}"? This action cannot be undone.`}
+        confirmText="Delete"
+        cancelText="Cancel"
+        isDangerous={true}
+        isLoading={isDeleting}
+        onConfirm={handleDelete}
+        onCancel={() => setShowDeleteConfirm(false)}
+      />
+
+      {/* History Modal */}
+      {entry && (
+        <StreakHistoryModal
+          isOpen={showHistoryModal}
+          onClose={() => setShowHistoryModal(false)}
+          streakId={entry.id || 0}
+          streakTitle={entry.title}
+        />
+      )}
     </SidebarWrapper>
   );
 }

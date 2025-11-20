@@ -1,6 +1,6 @@
 "use client";
 
-import React from "react";
+import React, { useEffect, useState } from "react";
 import { StreakEntry } from "./StreakTypes";
 
 interface Props {
@@ -23,6 +23,30 @@ function extractDaysText(days?: string[]): string {
 }
 
 export default function ActivityItem({ entry, onOpen, onStart }: Props) {
+  const [streakCount, setStreakCount] = useState(0);
+
+  // Fetch streak count from API
+  useEffect(() => {
+    const fetchStreakCount = async () => {
+      try {
+        const response = await fetch(`/api/streaks/${entry.id}`);
+        if (response.ok) {
+          const streak = await response.json();
+          // Count the histories for this streak
+          if (streak.histories) {
+            setStreakCount(streak.histories.length);
+          }
+        }
+      } catch (error) {
+        console.error("Error fetching streak count:", error);
+        setStreakCount(0);
+      }
+    };
+
+    if (entry.id) {
+      fetchStreakCount();
+    }
+  }, [entry.id]);
   return (
     <div
       onClick={() => onOpen(entry)}
@@ -83,7 +107,7 @@ export default function ActivityItem({ entry, onOpen, onStart }: Props) {
         <div className="flex flex-col justify-center items-center text-center min-w-0">
           <span className="text-xs text-gray-500 truncate">Streak</span>
           <span className="text-xs font-semibold text-gray-900 truncate">
-            6
+            {streakCount}
           </span>
         </div>
       </div>

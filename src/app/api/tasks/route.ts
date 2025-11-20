@@ -97,7 +97,6 @@ function getUserIdFromRequest(req: Request): number | null {
  *             required:
  *               - title
  *               - deadline
- *               - categoryId
  *               - difficultyId
  *               - statusId
  *             properties:
@@ -111,8 +110,6 @@ function getUserIdFromRequest(req: Request): number | null {
  *               priority:
  *                 type: string
  *                 enum: [low, medium, high]
- *               categoryId:
- *                 type: number
  *               difficultyId:
  *                 type: number
  *               statusId:

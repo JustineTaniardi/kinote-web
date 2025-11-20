@@ -34,6 +34,22 @@ function getUserIdFromRequest(req: Request): number | null {
  *         required: true
  *         schema:
  *           type: number
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               title:
+ *                 type: string
+ *                 description: Session title
+ *               description:
+ *                 type: string
+ *                 description: Session description
+ *               breakCount:
+ *                 type: number
+ *                 description: Number of break sessions allowed
  *     responses:
  *       201:
  *         description: Session started successfully
@@ -89,15 +105,33 @@ export async function POST(
       );
     }
 
+    // Get request body
+    const body = await req.json();
+    const { title = streak.title, description = "", breakCount = 0 } = body;
+
     const now = new Date();
     const history = await prisma.streakHistory.create({
       data: {
         streakId,
+        userId,
+        title,
+        description,
         startTime: now,
         endTime: new Date(0), // Placeholder, will be updated on end
         duration: 0,
+        breakSessions: [],
       },
     });
+
+    // Update Streak table with the break count
+    if (breakCount > 0) {
+      await prisma.streak.update({
+        where: { id: streakId },
+        data: {
+          breakCount,
+        },
+      });
+    }
 
     return NextResponse.json(
       {

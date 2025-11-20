@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useEffect, useState, useRef } from "react";
+import { showError } from "@/lib/toast";
 
 interface StreakTimerModalProps {
   isOpen: boolean;
@@ -89,35 +90,21 @@ export default function StreakTimerModal({
     return null;
   };
 
-  const persistedState = loadPersistedState();
-
-  const [mode, setMode] = useState<Mode>(persistedState?.mode || "focus");
-  const [isRunning, setIsRunning] = useState(
-    persistedState?.isRunning ?? false
-  );
-  const [focusSeconds, setFocusSeconds] = useState(
-    persistedState?.focusSeconds ?? focusMinutes * 60
-  );
-  const [savedFocusSeconds, setSavedFocusSeconds] = useState(
-    persistedState?.savedFocusSeconds ?? focusMinutes * 60
-  );
-  const [breakSeconds, setBreakSeconds] = useState(
-    persistedState?.breakSeconds ?? breakMinutes * 60
-  );
+  // ✅ ALWAYS use fresh initial values - don't load persisted state on mount
+  // Timer should start fresh each time the modal opens with the fixed user input values
+  const [mode, setMode] = useState<Mode>("focus");
+  const [isRunning, setIsRunning] = useState(false);
+  const [focusSeconds, setFocusSeconds] = useState(focusMinutes * 60);
+  const [savedFocusSeconds, setSavedFocusSeconds] = useState(focusMinutes * 60);
+  const [breakSeconds, setBreakSeconds] = useState(breakMinutes * 60);
   const [remainingBreakReps, setRemainingBreakReps] = useState(
-    persistedState?.remainingBreakReps ?? initialBreakRepetitions
+    initialBreakRepetitions
   );
-  const [usedBreakReps, setUsedBreakReps] = useState(
-    persistedState?.usedBreakReps ?? 0
-  );
-  const [breakSessions, setBreakSessions] = useState<BreakSession[]>(
-    persistedState?.breakSessions ?? []
-  );
-  const [totalAccumulatedFocus, setTotalAccumulatedFocus] = useState(
-    persistedState?.totalAccumulatedFocus ?? 0
-  );
+  const [usedBreakReps, setUsedBreakReps] = useState(0);
+  const [breakSessions, setBreakSessions] = useState<BreakSession[]>([]);
+  const [totalAccumulatedFocus, setTotalAccumulatedFocus] = useState(0);
   const [position, setPosition] = useState<{ x: number; y: number } | null>(
-    persistedState?.position || initializePosition
+    initializePosition()
   );
   const [isMinimized, setIsMinimized] = useState(false);
   const [isDragging, setIsDragging] = useState(false);
@@ -126,7 +113,12 @@ export default function StreakTimerModal({
   const containerRef = useRef<HTMLDivElement>(null);
   const intervalRef = useRef<NodeJS.Timeout | null>(null);
 
-  // Persist state to localStorage
+  // ✅ Lock initial break values so they can't change even if props change
+  // Use refs to store the initial values when modal first opens
+  const lockedBreakMinutesRef = useRef<number>(breakMinutes);
+  const lockedInitialBreakRepsRef = useRef<number>(initialBreakRepetitions);
+
+  // Persist state to localStorage during the session
   useEffect(() => {
     if (isOpen && position) {
       const stateToSave = {
@@ -156,6 +148,15 @@ export default function StreakTimerModal({
     totalAccumulatedFocus,
     position,
   ]);
+
+  // ✅ Lock in the break values when modal first opens to prevent external changes
+  // This ensures break time and break repetitions don't change even if props update
+  useEffect(() => {
+    if (isOpen) {
+      lockedBreakMinutesRef.current = breakMinutes;
+      lockedInitialBreakRepsRef.current = initialBreakRepetitions;
+    }
+  }, [isOpen, breakMinutes, initialBreakRepetitions]);
 
   // Header drag handler
   const handleHeaderMouseDown = (e: React.MouseEvent<HTMLDivElement>) => {
@@ -236,6 +237,8 @@ export default function StreakTimerModal({
             const totalFocus = totalAccumulatedFocus + (focusMinutes * 60 - 1);
             if (onComplete) {
               onComplete(totalFocus, usedBreakReps, breakSessions);
+              // ✅ Clear timer state when focus time completes
+              setTimeout(() => localStorage.removeItem("streakTimerState"), 100);
             }
             return 0;
           }
@@ -252,7 +255,7 @@ export default function StreakTimerModal({
             const newBreakSession: BreakSession = {
               startTime: Date.now(),
               endTime: Date.now(),
-              duration: breakMinutes * 60,
+              duration: lockedBreakMinutesRef.current * 60, // ✅ Use locked value
               focusTimeBeforeBreak: savedFocusSeconds,
               type: "completed",
             };
@@ -299,10 +302,38 @@ export default function StreakTimerModal({
         totalAccumulatedFocus + (focusMinutes * 60 - focusSeconds)
       );
       setSavedFocusSeconds(focusSeconds);
+      
+      // Calculate new breakCount after taking a break - use locked value
+      const newBreakCount = lockedInitialBreakRepsRef.current - (usedBreakReps + 1);
+      
+      // ✅ Sync updated breakCount to database
+      if (streakId) {
+        const token = localStorage.getItem("authToken");
+        if (token) {
+          fetch(`/api/streaks/${streakId}`, {
+            method: "PATCH",
+            headers: {
+              "Content-Type": "application/json",
+              Authorization: `Bearer ${token}`,
+            },
+            body: JSON.stringify({
+              breakCount: newBreakCount,
+            }),
+          })
+            .then((res) => res.json())
+            .then((data) => {
+              console.log("breakCount updated on break:", data);
+            })
+            .catch((err) => {
+              console.error("Failed to update breakCount on break:", err);
+            });
+        }
+      }
+      
       setRemainingBreakReps((prev: number) => prev - 1);
       setUsedBreakReps((prev: number) => prev + 1);
       setMode("break");
-      setBreakSeconds(breakMinutes * 60);
+      setBreakSeconds(lockedBreakMinutesRef.current * 60); // ✅ Use locked value
       // Immediately start break timer
       setIsRunning(true);
     }
@@ -329,7 +360,7 @@ export default function StreakTimerModal({
 
   const handleBackToFocus = () => {
     // Return to focus mode during break - record break session with elapsed time
-    const elapsedBreakTime = breakMinutes * 60 - breakSeconds;
+    const elapsedBreakTime = lockedBreakMinutesRef.current * 60 - breakSeconds; // ✅ Use locked value
     const completedBreakSession: BreakSession = {
       startTime: Date.now(),
       duration: elapsedBreakTime,
@@ -381,11 +412,15 @@ export default function StreakTimerModal({
       if (onComplete) {
         onComplete(totalFocus, usedBreakReps, breakSessions);
       }
+      
+      // ✅ Clear timer state from localStorage when session ends
+      localStorage.removeItem("streakTimerState");
+      
       handleClose();
       setShowEndSessionModal(false);
     } catch (error) {
       console.error("Error ending session:", error);
-      alert("Failed to end session. Please try again.");
+      showError("Failed to end session. Please try again.");
     }
   };
 
@@ -411,11 +446,11 @@ export default function StreakTimerModal({
         {/* Minimized Button - Bottom Right Corner (Desktop) */}
         <button
           onClick={() => setIsMinimized(false)}
-          className="hidden md:flex fixed bottom-6 right-6 z-50 w-16 h-16 rounded-full bg-[#161d36] text-white shadow-lg hover:bg-[#1a2140] active:scale-95 transition-all items-center justify-center flex-col"
+          className="hidden md:flex fixed bottom-6 right-6 z-50 w-24 h-24 rounded-full bg-[#161d36] text-white shadow-lg hover:bg-[#1a2140] active:scale-95 transition-all items-center justify-center flex-col"
           title="Click to expand"
         >
           <div className="text-xs font-bold text-center leading-tight">
-            <div className="text-lg">{formatTime(currentSeconds)}</div>
+            <div className="text-2xl">{formatTime(currentSeconds)}</div>
           </div>
         </button>
 

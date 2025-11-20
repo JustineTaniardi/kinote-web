@@ -104,10 +104,54 @@ export async function POST(
 
     const { id } = await params;
     const streakId = parseInt(id);
-    const body = await req.json();
-    const { description, photoUrl } = body;
 
-    if (!description) {
+    // Handle both FormData and JSON requests
+    let description = "";
+    let sessionTitle = "";
+    let photoUrl: string | null = null;
+    let imageBase64: string | null = null;
+
+    const contentType = req.headers.get("content-type");
+    if (contentType?.includes("multipart/form-data")) {
+      // Handle FormData (from file upload)
+      const formData = await req.formData();
+      const imageFile = formData.get("image") as File;
+      sessionTitle = (formData.get("title") as string) || "";
+      const sessionDescription = (formData.get("description") as string) || "";
+
+      // Description is required
+      if (!sessionDescription) {
+        return NextResponse.json(
+          { message: "description is required" },
+          { status: 400 }
+        );
+      }
+
+      if (imageFile) {
+        const buffer = await imageFile.arrayBuffer();
+        imageBase64 = Buffer.from(buffer).toString("base64");
+        description = sessionDescription;
+      } else {
+        description = sessionDescription;
+      }
+    } else {
+      // Handle JSON request
+      const body = await req.json();
+      description = body.description || "";
+      sessionTitle = body.title || "";
+      photoUrl = body.photoUrl || null;
+
+      // Description is required
+      if (!description) {
+        return NextResponse.json(
+          { message: "description is required" },
+          { status: 400 }
+        );
+      }
+    }
+
+    // At least description or image must be provided
+    if (!description && !imageBase64) {
       return NextResponse.json(
         { message: "description is required" },
         { status: 400 }
@@ -135,11 +179,11 @@ export async function POST(
 
     // Build prompt for OpenAI with proper escaping to prevent prompt injection
     const escapedDescription = String(description).replace(/[`\\${}]/g, (char) => `\\${char}`);
-    const escapedPhotoUrl = String(photoUrl || "No photo provided").replace(/[`\\${}]/g, (char) => `\\${char}`);
+    const photoInfo = photoUrl || imageBase64 ? "Photo provided" : "No photo provided";
     
     const promptString = `You are an AI activity verification system. Analyze the following session:
 Description: "${escapedDescription}"
-Photo URL: "${escapedPhotoUrl}"
+Photo: "${photoInfo}"
 
 Determine:
 1) Does the photo appear authentic (if provided)?
@@ -199,12 +243,51 @@ Return STRICT valid JSON ONLY (no other text) with fields:
       data: {
         streakId,
         description: description || null,
-        imageUrl: photoUrl || null,
+        imageUrl: photoUrl || imageBase64 || null,
         verified: parsed.verified ?? false,
         confidence: parsed.confidence ?? null,
         resultText: JSON.stringify(parsed),
       },
     });
+
+    // Get the latest StreakHistory record for this streak
+    const latestHistory = await prisma.streakHistory.findFirst({
+      where: { streakId },
+      orderBy: { createdAt: "desc" },
+      take: 1,
+    });
+
+    // Update StreakHistory with verification if it exists
+    if (latestHistory) {
+      await prisma.streakHistory.update({
+        where: { id: latestHistory.id },
+        data: {
+          photoUrl: photoUrl || imageBase64 || null,
+          verifiedAI: parsed.verified ?? false,
+          aiNote: parsed.reasoning || null,
+        },
+      });
+
+      // Link verification to history
+      await prisma.aiVerification.update({
+        where: { id: verification.id },
+        data: {
+          historyId: latestHistory.id,
+        },
+      });
+
+      // Increment streak count if verified
+      if (parsed.verified) {
+        await prisma.streak.update({
+          where: { id: streakId },
+          data: {
+            streakCount: {
+              increment: 1,
+            },
+          },
+        });
+      }
+    }
 
     return NextResponse.json(verification, { status: 201 });
   } catch (error) {

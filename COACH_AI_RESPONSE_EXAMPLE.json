@@ -1,0 +1,64 @@
+{
+  "personality_tendencies": "Anda menunjukkan dedikasi tinggi dalam pengembangan diri dan memiliki passion yang kuat untuk pembelajaran berkelanjutan. Streaks yang Anda pilih menunjukkan komitmen untuk menguasai keterampilan teknis dan soft skills secara bersamaan.",
+  "strengths": [
+    "Kemampuan problem-solving yang kuat dan systematic dalam pendekatan",
+    "Konsistensi dan disiplin tinggi dalam menjalankan routine harian",
+    "Fokus yang jelas pada self-improvement dan career development",
+    "Kemampuan adaptasi cepat terhadap teknologi baru"
+  ],
+  "weaknesses": [
+    "Perlu meningkatkan kolaborasi dan komunikasi tim dalam project",
+    "Time management ketika mengerjakan multiple projects bersamaan",
+    "Perlu memperluas network profesional di industri"
+  ],
+  "recommended_pekerjaan": [
+    {
+      "title": "Gojek - Backend Developer (Jakarta)",
+      "url": "https://careers.gojek.io/jobs/backend-developer"
+    },
+    {
+      "title": "PT Bukalapak - Full Stack Engineer",
+      "url": "https://bukalapak.com/careers/jobs"
+    },
+    {
+      "title": "Traveloka - Senior Software Engineer",
+      "url": "https://www.traveloka.com/careers"
+    },
+    {
+      "title": "Grab - Platform Engineer Indonesia",
+      "url": "https://grab.careers/jobs/indonesia"
+    },
+    {
+      "title": "LinkedIn Jobs - Search Developer Indonesia",
+      "url": "https://linkedin.com/jobs/search?keywords=developer&location=Indonesia"
+    },
+    {
+      "title": "Tech.id - Indonesian Tech Jobs Portal",
+      "url": "https://www.tech.id/jobs"
+    }
+  ],
+  "roadmap": [
+    "Bangun portfolio GitHub yang kuat dengan 5-10 project nyata yang showcase skills Anda",
+    "Dapatkan sertifikasi dari platform terkemuka (AWS, Google Cloud, atau Kubernetes)",
+    "Ikuti tech meetups dan conferences di Indonesia untuk network dan update tren industri",
+    "Kontribusi ke open source projects untuk meningkatkan visibility di komunitas"
+  ],
+  "recommended_learning": [
+    {
+      "title": "Dicoding - Backend Development Path",
+      "url": "https://www.dicoding.com/courses/backend"
+    },
+    {
+      "title": "Udemy - System Design dan Scalability",
+      "url": "https://www.udemy.com/course/system-design-interview"
+    },
+    {
+      "title": "Coursera - Cloud Architecture Indonesia",
+      "url": "https://www.coursera.org/learn/cloud-architecture"
+    },
+    {
+      "title": "YouTube - Fireship & Tech Talks Indonesia",
+      "url": "https://www.youtube.com/@fireship"
+    }
+  ]
+}

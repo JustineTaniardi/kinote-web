@@ -12,6 +12,7 @@ import {
   EnvelopeIcon,
 } from "@heroicons/react/24/outline";
 import { useAuth } from "@/lib/hooks/useAuth";
+import { LoadingSpinner } from "@/components/LoadingSpinner";
 
 export default function RegisterPage() {
   const router = useRouter();
@@ -84,12 +85,12 @@ export default function RegisterPage() {
 
     if (result) {
       setSuccess(
-        "Registration successful! Please verify your email to continue."
+        "Registration successful! Redirecting to login..."
       );
-      // ✅ Redirect to verify-email page instead of /login
+      // Redirect to login page
       setTimeout(() => {
-        router.push(`/verify-email?email=${encodeURIComponent(result.email)}`);
-      }, 2000);
+        router.push("/login");
+      }, 1000);
     }
   };
 
@@ -235,9 +236,16 @@ export default function RegisterPage() {
           <button
             type="submit"
             disabled={isLoading}
-            className="w-full py-3 bg-white text-[#0f1a31] font-semibold rounded-lg hover:bg-white/90 transition disabled:opacity-50 disabled:cursor-not-allowed"
+            className="w-full py-3 bg-white text-[#0f1a31] font-semibold rounded-lg hover:bg-white/90 transition disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
           >
-            {isLoading ? "Creating Account..." : "Register"}
+            {isLoading ? (
+              <>
+                <LoadingSpinner />
+                <span>Creating Account...</span>
+              </>
+            ) : (
+              "Register"
+            )}
           </button>
 
           {/* Login Link */}
@@ -482,9 +490,16 @@ export default function RegisterPage() {
                 <button
                   type="submit"
                   disabled={isLoading}
-                  className="w-full rounded-md bg-[#0f1a31] px-4 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-[#101c36] transition disabled:opacity-50 disabled:cursor-not-allowed"
+                  className="w-full rounded-md bg-[#0f1a31] px-4 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-[#101c36] transition disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
                 >
-                  {isLoading ? "Creating Account..." : "Register"}
+                  {isLoading ? (
+                    <>
+                      <LoadingSpinner />
+                      <span>Creating Account...</span>
+                    </>
+                  ) : (
+                    "Register"
+                  )}
                 </button>
               </form>
             </div>

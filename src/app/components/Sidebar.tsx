@@ -198,16 +198,16 @@ const Sidebar: React.FC<SidebarProps> = ({ onLogout }) => {
       path: "/todo",
     },
     {
-      id: "coach-ai",
-      label: "Coach AI",
-      icon: "/img/sidebar/ai_icon.png",
-      path: "/coach-ai",
-    },
-    {
       id: "calendar",
       label: "Calendar",
       icon: "/img/sidebar/calendar_icon.png",
       path: "/calendar",
+    },
+    {
+      id: "coach-ai",
+      label: "Coach AI",
+      icon: "/img/sidebar/ai_icon.png",
+      path: "/coach-ai",
     },
   ];
 

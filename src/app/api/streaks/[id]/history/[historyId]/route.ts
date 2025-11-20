@@ -50,6 +50,44 @@ function getUserIdFromRequest(req: Request): number | null {
  *         description: Session not found
  *       500:
  *         description: Internal server error
+ *   patch:
+ *     tags:
+ *       - Streak
+ *     summary: Update session history description
+ *     description: Update the description of a specific session
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: number
+ *       - in: path
+ *         name: historyId
+ *         required: true
+ *         schema:
+ *           type: number
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               description:
+ *                 type: string
+ *     responses:
+ *       200:
+ *         description: Session description updated successfully
+ *       401:
+ *         description: Unauthorized
+ *       403:
+ *         description: Forbidden
+ *       404:
+ *         description: Session not found
+ *       500:
+ *         description: Internal server error
  *   delete:
  *     tags:
  *       - Streak
@@ -129,6 +167,72 @@ export async function GET(
     return NextResponse.json(history);
   } catch (error) {
     console.error("Get history detail error:", error);
+    return NextResponse.json(
+      { message: "Internal server error" },
+      { status: 500 }
+    );
+  }
+}
+
+export async function PATCH(
+  req: Request,
+  { params }: { params: Promise<{ id: string; historyId: string }> }
+) {
+  try {
+    const { id, historyId: historyIdStr } = await params;
+    const userId = getUserIdFromRequest(req);
+    if (!userId) {
+      return NextResponse.json(
+        { message: "Unauthorized" },
+        { status: 401 }
+      );
+    }
+
+    const streakId = parseInt(id);
+    const historyId = parseInt(historyIdStr);
+
+    const streak = await prisma.streak.findUnique({
+      where: { id: streakId },
+    });
+
+    if (!streak) {
+      return NextResponse.json(
+        { message: "Streak not found" },
+        { status: 404 }
+      );
+    }
+
+    if (streak.userId !== userId) {
+      return NextResponse.json(
+        { message: "Forbidden" },
+        { status: 403 }
+      );
+    }
+
+    const history = await prisma.streakHistory.findUnique({
+      where: { id: historyId },
+    });
+
+    if (!history || history.streakId !== streakId) {
+      return NextResponse.json(
+        { message: "Session not found" },
+        { status: 404 }
+      );
+    }
+
+    const body = await req.json();
+    const { description } = body;
+
+    const updatedHistory = await prisma.streakHistory.update({
+      where: { id: historyId },
+      data: {
+        description: description || "",
+      },
+    });
+
+    return NextResponse.json(updatedHistory);
+  } catch (error) {
+    console.error("Update history error:", error);
     return NextResponse.json(
       { message: "Internal server error" },
       { status: 500 }

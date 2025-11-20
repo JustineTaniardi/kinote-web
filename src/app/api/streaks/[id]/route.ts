@@ -201,6 +201,15 @@ export async function PATCH(
     if (body.categoryId !== undefined) updateData.categoryId = body.categoryId;
     if (body.subCategoryId !== undefined) updateData.subCategoryId = body.subCategoryId;
     if (body.dayId !== undefined) updateData.dayId = body.dayId;
+    if (body.dayIds !== undefined) {
+      // Support array of day IDs
+      const dayIdsArray = Array.isArray(body.dayIds) ? body.dayIds : [body.dayIds].filter(Boolean);
+      updateData.dayIds = dayIdsArray;
+      // Set dayId to first item for backward compatibility
+      if (dayIdsArray.length > 0) {
+        updateData.dayId = dayIdsArray[0];
+      }
+    }
     if (body.totalTime !== undefined) updateData.totalTime = body.totalTime;
     if (body.breakTime !== undefined) updateData.breakTime = body.breakTime;
     if (body.breakCount !== undefined) updateData.breakCount = body.breakCount;

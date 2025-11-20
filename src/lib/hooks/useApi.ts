@@ -39,8 +39,6 @@ export function useApi<T = unknown>(
     headers = {},
     body,
     skip = false,
-    onSuccess,
-    onError,
   } = options;
 
   const [data, setData] = useState<T | null>(null);
@@ -50,21 +48,16 @@ export function useApi<T = unknown>(
   // Use ref to track if component is mounted to prevent state updates on unmounted components
   const isMountedRef = useRef(true);
 
-  // Get auth token from localStorage
-  const getAuthHeader = useCallback(() => {
-    const token =
-      typeof window !== "undefined" ? localStorage.getItem("authToken") : null;
-    if (token) {
-      return { Authorization: `Bearer ${token}` };
-    }
-    return {};
-  }, []);
+  // Stringify headers to create a stable dependency
+  const headersStr = JSON.stringify(headers);
 
-  // Main fetch function
+  // Main fetch function - only depends on url and skip to prevent re-fetching
   const fetchData = useCallback(async () => {
     // Skip if URL is null or skip flag is true
     if (!url || skip) {
-      setLoading(false);
+      if (isMountedRef.current) {
+        setLoading(false);
+      }
       return;
     }
 
@@ -72,12 +65,18 @@ export function useApi<T = unknown>(
     let ignore = false;
 
     try {
-      setLoading(true);
-      setError(null);
+      if (isMountedRef.current) {
+        setLoading(true);
+        setError(null);
+      }
+
+      // Get auth token directly (not via callback to avoid dependency issues)
+      const token = typeof window !== "undefined" ? localStorage.getItem("authToken") : null;
+      const authHeader = token ? { Authorization: `Bearer ${token}` } : {};
 
       const requestHeaders = {
         "Content-Type": "application/json",
-        ...getAuthHeader(),
+        ...authHeader,
         ...headers,
       } as Record<string, string>;
 
@@ -96,6 +95,42 @@ export function useApi<T = unknown>(
       // Check if component is still mounted
       if (ignore) return;
 
+      // ✅ Handle 401 Unauthorized - might be token timing issue, retry once
+      if (response.status === 401) {
+        // Wait a moment and retry with fresh token
+        await new Promise(resolve => setTimeout(resolve, 100));
+        
+        // Get fresh token and retry
+        const freshToken = typeof window !== "undefined" ? localStorage.getItem("authToken") : null;
+        const freshAuthHeader = freshToken ? { Authorization: `Bearer ${freshToken}` } : {};
+        const retryHeaders = {
+          "Content-Type": "application/json",
+          ...freshAuthHeader,
+          ...headers,
+        } as Record<string, string>;
+        
+        const retryOptions: RequestInit = {
+          method,
+          headers: retryHeaders,
+        };
+        
+        if (method !== "GET" && body) {
+          retryOptions.body = JSON.stringify(body);
+        }
+        
+        const retryResponse = await fetch(url, retryOptions);
+        
+        if (!retryResponse.ok) {
+          throw new Error(`API Error: ${retryResponse.status} ${retryResponse.statusText}`);
+        }
+        
+        const result = await retryResponse.json();
+        if (!ignore && isMountedRef.current) {
+          setData(result);
+        }
+        return;
+      }
+
       if (!response.ok) {
         throw new Error(`API Error: ${response.status} ${response.statusText}`);
       }
@@ -104,13 +139,11 @@ export function useApi<T = unknown>(
 
       if (!ignore && isMountedRef.current) {
         setData(result);
-        onSuccess?.(result);
       }
     } catch (err) {
       if (!ignore && isMountedRef.current) {
         const error = err instanceof Error ? err : new Error(String(err));
         setError(error);
-        onError?.(error);
       }
     } finally {
       if (!ignore && isMountedRef.current) {
@@ -121,7 +154,7 @@ export function useApi<T = unknown>(
     return () => {
       ignore = true;
     };
-  }, [url, skip, method, body, headers, getAuthHeader, onSuccess, onError]);
+  }, [url, skip, method, body, headersStr]);
 
   // Cleanup on unmount
   useEffect(() => {

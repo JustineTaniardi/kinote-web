@@ -1,6 +1,9 @@
+"use client";
+
 import Image from "next/image";
 
 export default function Content() {
+
   return (
     <section className="w-full flex flex-col items-center justify-center px-4 md:px-16 lg:px-20 mt-12">
       {/* Hero */}
@@ -110,31 +113,10 @@ export default function Content() {
                 />
               </div>
 
-              {/* Box - relative mobile (content visible), absolute desktop (hover expand) */}
-              <div
-                className="
-    relative lg:absolute lg:left-1/2 lg:-translate-x-1/2 lg:z-10
-    bg-white rounded-xl shadow-[0_4px_25px_rgba(0,0,0,0.1)]
-    w-full lg:w-[85%] px-6 py-4 lg:py-3 overflow-hidden
-    flex flex-col items-start justify-start
-    transition-all duration-500 ease-in-out
-    h-auto lg:h-20 lg:group-hover:h-[150px]"
-                style={{ top: "unset" }}
-              >
-                <h3 className="font-semibold text-gray-900 text-lg">
-                  {item.title}
-                </h3>
-
-                <p
-                  className="
-      text-gray-600 text-sm mt-2 mb-2 text-left 
-      lg:opacity-0 lg:translate-y-3
-      transition-all duration-500 ease-in-out delay-100
-      lg:group-hover:opacity-100 lg:group-hover:translate-y-0
-    "
-                >
-                  {item.desc}
-                </p>
+              {/* Box - static on all views for hydration safety */}
+              <div className="relative lg:absolute lg:left-1/2 lg:-translate-x-1/2 lg:z-10 bg-white rounded-xl shadow-[0_4px_25px_rgba(0,0,0,0.1)] w-full lg:w-[85%] px-6 py-4 lg:py-3 overflow-hidden flex flex-col items-start justify-start h-auto transition-all duration-500 ease-in-out" style={{ top: "unset" }}>
+                <h3 className="font-semibold text-gray-900 text-lg">{item.title}</h3>
+                <p className="text-gray-600 text-sm mt-2 mb-2 text-left transition-all duration-500 ease-in-out delay-100">{item.desc}</p>
               </div>
             </div>
           ))}

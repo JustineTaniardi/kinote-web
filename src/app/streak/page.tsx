@@ -19,12 +19,6 @@ export default function StreakPage() {
       router.push("/login");
       return;
     }
-
-    // Check if email is verified
-    if (!user.verified) {
-      // Email not verified - redirect to verification page
-      router.push("/verify-email");
-    }
   }, [user, isLoading, router]);
 
   // Show loading state while checking authentication
@@ -39,8 +33,8 @@ export default function StreakPage() {
     );
   }
 
-  // User not authenticated or not verified - show loading while redirecting
-  if (!user || !user.verified) {
+  // User not authenticated - show loading while redirecting
+  if (!user) {
     return (
       <div className="flex min-h-screen items-center justify-center bg-[#F8FAFB]">
         <div className="text-center">

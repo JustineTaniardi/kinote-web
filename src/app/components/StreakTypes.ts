@@ -10,14 +10,20 @@ export interface StreakEntry {
   id: number;
   title: string;
   category?: string;
+  categoryId?: number;
   subcategory?: string;
+  subCategoryId?: number;
+  dayId?: number;
+  dayIds?: number[] | string; // JSON string or array of day IDs
   totalMinutes: number; // total duration in minutes
   lastUpdated?: string; // ISO string
   description?: string;
   date?: string; // ISO date when completed
   status?: string;
   days?: string[];
-  breakTime?: string;
+  breakTime?: string | number;
+  breakCount?: number;
+  streakCount?: number;
   progressSteps?: ProgressStep[]; // Array of progress/documentation steps
 }
 

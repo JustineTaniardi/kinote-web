@@ -1,5 +1,6 @@
 generator client {
-  provider = "prisma-client-js"
+  provider      = "prisma-client-js"
+  binaryTargets = ["native", "linux-musl-openssl-3.0.x"]
 }
 
 datasource db {
@@ -8,29 +9,26 @@ datasource db {
 }
 
 model User {
-  id                      Int       @id @default(autoincrement())
-  name                    String
-  email                   String    @unique
-  password                String
-  emailVerifiedAt         DateTime?
-  emailVerificationToken  String?   @unique
-  resetPasswordToken      String?   @unique
-  resetPasswordExpiresAt  DateTime?
-  createdAt               DateTime  @default(now())
-  updatedAt               DateTime  @updatedAt
-
-  tasks     Task[]
-  streaks   Streak[]
-  aiResults AiAnalysis[]
+  id                     Int             @id @default(autoincrement())
+  name                   String
+  email                  String          @unique
+  password               String
+  resetPasswordToken     String?         @unique
+  resetPasswordExpiresAt DateTime?
+  createdAt              DateTime        @default(now())
+  updatedAt              DateTime        @updatedAt
+  aiResults              AiAnalysis[]
+  streaks                Streak[]
+  histories              StreakHistory[]
+  tasks                  Task[]
 }
 
 model Category {
-  id        Int      @id @default(autoincrement())
-  name      String   @unique
-  createdAt DateTime @default(now())
-
-  subCategories SubCategory[]
+  id            Int           @id @default(autoincrement())
+  name          String        @unique
+  createdAt     DateTime      @default(now())
   streaks       Streak[]
+  subCategories SubCategory[]
 }
 
 model SubCategory {
@@ -38,9 +36,10 @@ model SubCategory {
   name       String
   categoryId Int
   createdAt  DateTime @default(now())
+  streaks    Streak[]
+  category   Category @relation(fields: [categoryId], references: [id])
 
-  category Category @relation(fields: [categoryId], references: [id])
-  streaks  Streak[]
+  @@index([categoryId], map: "SubCategory_categoryId_fkey")
 }
 
 model Difficulty {
@@ -58,85 +57,95 @@ model Status {
 model Day {
   id      Int       @id @default(autoincrement())
   name    String    @unique
-  tasks   TaskDay[]
   streaks Streak[]
+  tasks   TaskDay[]
 }
 
 model Task {
-  id          Int      @id @default(autoincrement())
-  title       String
-  description String?
-  deadline    DateTime
-  priority    String   @default("medium")
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
-
+  id           Int        @id @default(autoincrement())
+  title        String
+  description  String?
+  deadline     DateTime
+  priority     String     @default("medium")
+  createdAt    DateTime   @default(now())
+  updatedAt    DateTime   @updatedAt
   userId       Int
   difficultyId Int
   statusId     Int
+  difficulty   Difficulty @relation(fields: [difficultyId], references: [id])
+  status       Status     @relation(fields: [statusId], references: [id])
+  user         User       @relation(fields: [userId], references: [id])
+  days         TaskDay[]
 
-  user       User       @relation(fields: [userId], references: [id])
-  difficulty Difficulty @relation(fields: [difficultyId], references: [id])
-  status     Status     @relation(fields: [statusId], references: [id])
-  days       TaskDay[]
+  @@index([difficultyId], map: "Task_difficultyId_fkey")
+  @@index([statusId], map: "Task_statusId_fkey")
+  @@index([userId], map: "Task_userId_fkey")
 }
 
 model TaskDay {
-  id     Int @id @default(autoincrement())
+  id     Int  @id @default(autoincrement())
   taskId Int
   dayId  Int
-
-  task Task @relation(fields: [taskId], references: [id])
-  day  Day  @relation(fields: [dayId], references: [id])
+  day    Day  @relation(fields: [dayId], references: [id])
+  task   Task @relation(fields: [taskId], references: [id])
 
   @@unique([taskId, dayId])
+  @@index([dayId], map: "TaskDay_dayId_fkey")
 }
 
 model Streak {
-  id          Int      @id @default(autoincrement())
-  title       String
-  dayId       Int
-  totalTime   Int      @default(0)
-  breakTime   Int      @default(0)
-  breakCount  Int      @default(0)
-  description String?
-  photoUrl    String?
-  verified    Boolean  @default(false)
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
-
+  id            Int              @id @default(autoincrement())
+  title         String
+  dayId         Int?
+  dayIds        Json
+  totalTime     Int              @default(0)
+  breakTime     Int              @default(0)
+  breakCount    Int              @default(0)
+  streakCount   Int              @default(0)
+  description   String?
+  photoUrl      String?
+  verified      Boolean          @default(false)
+  createdAt     DateTime         @default(now())
+  updatedAt     DateTime         @updatedAt
   userId        Int
   categoryId    Int
   subCategoryId Int?
-
-  user        User         @relation(fields: [userId], references: [id])
-  category    Category     @relation(fields: [categoryId], references: [id])
-  subCategory SubCategory? @relation(fields: [subCategoryId], references: [id])
-  day         Day          @relation(fields: [dayId], references: [id])
-
-  histories     StreakHistory[]
-  exports       StreakExport[]
   verifications AiVerification[]
+  category      Category         @relation(fields: [categoryId], references: [id])
+  day           Day?             @relation(fields: [dayId], references: [id])
+  subCategory   SubCategory?     @relation(fields: [subCategoryId], references: [id])
+  user          User             @relation(fields: [userId], references: [id])
+  exports       StreakExport[]
+  histories     StreakHistory[]
+
+  @@index([categoryId], map: "Streak_categoryId_fkey")
+  @@index([dayId], map: "Streak_dayId_fkey")
+  @@index([subCategoryId], map: "Streak_subCategoryId_fkey")
+  @@index([userId], map: "Streak_userId_fkey")
 }
 
 model StreakHistory {
-  id              Int       @id @default(autoincrement())
-  streakId        Int
-  startTime       DateTime
-  endTime         DateTime?
-  duration        Int?
-  focusDuration   Int       @default(0)
-  totalBreakTime  Int       @default(0)
-  breakCount      Int       @default(0)
-  description     String?
-  photoUrl        String?
-  verifiedAI      Boolean   @default(false)
-  aiNote          String?
-  breakSessions   Json      @default("[]")
-  createdAt       DateTime  @default(now())
+  id             Int              @id @default(autoincrement())
+  streakId       Int
+  userId         Int
+  title          String
+  description    String
+  startTime      DateTime
+  endTime        DateTime?
+  duration       Int?
+  focusDuration  Int              @default(0)
+  totalBreakTime Int              @default(0)
+  photoUrl       String?
+  verifiedAI     Boolean          @default(false)
+  aiNote         String?
+  breakSessions  Json
+  createdAt      DateTime         @default(now())
+  verifications  AiVerification[]
+  streak         Streak           @relation(fields: [streakId], references: [id], onDelete: Cascade)
+  user           User             @relation(fields: [userId], references: [id], onDelete: Cascade)
 
-  streak        Streak           @relation(fields: [streakId], references: [id])
-  verifications AiVerification[]
+  @@index([streakId], map: "StreakHistory_streakId_fkey")
+  @@index([userId], map: "StreakHistory_userId_fkey")
 }
 
 model StreakExport {
@@ -146,8 +155,9 @@ model StreakExport {
   year       Int
   shareToken String   @unique
   createdAt  DateTime @default(now())
+  streak     Streak   @relation(fields: [streakId], references: [id])
 
-  streak Streak @relation(fields: [streakId], references: [id])
+  @@index([streakId], map: "StreakExport_streakId_fkey")
 }
 
 model AiAnalysis {
@@ -158,21 +168,24 @@ model AiAnalysis {
   promptUsed String   @db.Text
   result     Json
   createdAt  DateTime @default(now())
+  user       User     @relation(fields: [userId], references: [id])
 
-  user User @relation(fields: [userId], references: [id])
+  @@index([userId], map: "AiAnalysis_userId_fkey")
 }
 
 model AiVerification {
-  id          Int      @id @default(autoincrement())
+  id          Int            @id @default(autoincrement())
   streakId    Int?
   historyId   Int?
   description String?
   imageUrl    String?
   confidence  Float?
-  verified    Boolean  @default(false)
-  resultText  String?  @db.Text
-  createdAt   DateTime @default(now())
+  verified    Boolean        @default(false)
+  resultText  String?        @db.Text
+  createdAt   DateTime       @default(now())
+  history     StreakHistory? @relation(fields: [historyId], references: [id])
+  streak      Streak?        @relation(fields: [streakId], references: [id])
 
-  streak  Streak?        @relation(fields: [streakId], references: [id])
-  history StreakHistory? @relation(fields: [historyId], references: [id])
+  @@index([historyId], map: "AiVerification_historyId_fkey")
+  @@index([streakId], map: "AiVerification_streakId_fkey")
 }

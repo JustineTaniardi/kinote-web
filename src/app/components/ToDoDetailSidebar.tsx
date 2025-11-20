@@ -1,9 +1,17 @@
 "use client";
 
 import React, { useEffect, useState } from "react";
-import Image from "next/image";
 import SidebarWrapper from "./SidebarWrapper";
+import ConfirmationModal from "./ConfirmationModal";
 import { Trash2, Edit2, Check, X } from "lucide-react";
+import {
+  XMarkIcon,
+  Squares2X2Icon,
+  ClockIcon,
+  CalendarDaysIcon,
+} from "@heroicons/react/24/outline";
+import { useTaskMutation } from "@/lib/hooks/useTasks";
+import { showSuccess, showError } from "@/lib/toast";
 
 interface ToDoItem {
   id: number;
@@ -35,6 +43,8 @@ export default function ToDoDetailSidebar({
 }: Props) {
   const [mounted, setMounted] = useState(false);
   const [isEditing, setIsEditing] = useState(false);
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [isDeleting, setIsDeleting] = useState(false);
   const [editTitle, setEditTitle] = useState(item?.title || "");
   const [editCategory, setEditCategory] = useState(item?.category || "");
   const [editPriority, setEditPriority] = useState(item?.priority || "");
@@ -43,6 +53,8 @@ export default function ToDoDetailSidebar({
   const [editDescription, setEditDescription] = useState(
     item?.description || ""
   );
+
+  const { deleteTask } = useTaskMutation();
 
   useEffect(() => {
     if (isOpen) {
@@ -79,10 +91,17 @@ export default function ToDoDetailSidebar({
     "Finance",
   ];
 
-  const handleDelete = () => {
-    if (confirm("Delete this todo?")) {
-      onDelete?.(item.id);
+  const handleDelete = async () => {
+    setIsDeleting(true);
+    try {
+      await deleteTask(item.id);
+      setShowDeleteConfirm(false);
       onClose();
+      onDelete?.(item.id);
+    } catch (error) {
+      console.error("Delete error:", error);
+      showError("Failed to delete task");
+      setIsDeleting(false);
     }
   };
 
@@ -158,13 +177,7 @@ export default function ToDoDetailSidebar({
       <div className="px-6 py-6 flex-1 space-y-4 overflow-y-auto">
         {/* Category */}
         <div className="bg-gray-50 rounded-2xl p-4 flex items-center gap-3">
-          <Image
-            src="/img/add-activity-todo/category_icon.png"
-            width={20}
-            height={20}
-            alt="category"
-            className="shrink-0"
-          />
+          <Squares2X2Icon className="w-5 h-5 text-gray-600 shrink-0" />
           <div className="flex-1 min-w-0">
             {isEditing ? (
               <>
@@ -195,13 +208,7 @@ export default function ToDoDetailSidebar({
 
         {/* Priority */}
         <div className="bg-gray-50 rounded-2xl p-4 flex items-center gap-3">
-          <Image
-            src="/img/add-activity-todo/prioritas_icon.png"
-            width={20}
-            height={20}
-            alt="priority"
-            className="shrink-0"
-          />
+          <Squares2X2Icon className="w-5 h-5 text-gray-600 shrink-0" />
           <div className="flex-1 min-w-0">
             {isEditing ? (
               <>
@@ -232,13 +239,7 @@ export default function ToDoDetailSidebar({
 
         {/* Date */}
         <div className="bg-gray-50 rounded-2xl p-4 flex items-center gap-3">
-          <Image
-            src="/img/add-activity-todo/calendar_icon.png"
-            width={20}
-            height={20}
-            alt="date"
-            className="shrink-0"
-          />
+          <CalendarDaysIcon className="w-5 h-5 text-gray-600 shrink-0" />
           <div className="flex-1 min-w-0">
             {isEditing ? (
               <>
@@ -263,13 +264,7 @@ export default function ToDoDetailSidebar({
 
         {/* Time */}
         <div className="bg-gray-50 rounded-2xl p-4 flex items-center gap-3">
-          <Image
-            src="/img/add-activity-todo/jam_icon.png"
-            width={20}
-            height={20}
-            alt="time"
-            className="shrink-0"
-          />
+          <ClockIcon className="w-5 h-5 text-gray-600 shrink-0" />
           <div className="flex-1 min-w-0">
             {isEditing ? (
               <>
@@ -381,13 +376,26 @@ export default function ToDoDetailSidebar({
       {/* Delete Button */}
       <div className="px-6 py-4 border-t border-gray-100 bg-white sticky bottom-0">
         <button
-          onClick={handleDelete}
+          onClick={() => setShowDeleteConfirm(true)}
           className="w-full flex items-center justify-center gap-2 px-4 py-3 bg-red-50 text-red-600 rounded-lg border border-red-200/50 hover:bg-red-100 transition-colors font-medium text-sm"
         >
           <Trash2 className="w-4 h-4" />
           Delete
         </button>
       </div>
+
+      {/* Delete Confirmation Modal */}
+      <ConfirmationModal
+        isOpen={showDeleteConfirm}
+        title="Delete Todo"
+        message={`Are you sure you want to delete "${item.title}"? This action cannot be undone.`}
+        confirmText="Delete"
+        cancelText="Cancel"
+        isDangerous={true}
+        isLoading={isDeleting}
+        onConfirm={handleDelete}
+        onCancel={() => setShowDeleteConfirm(false)}
+      />
     </SidebarWrapper>
   );
 }

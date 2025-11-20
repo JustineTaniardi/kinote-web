@@ -1,6 +1,6 @@
 "use client";
 
-import React from "react";
+import React, { useEffect, useState } from "react";
 import { StreakEntry } from "./StreakTypes";
 
 interface Props {
@@ -18,6 +18,31 @@ function formatMinutes(mins: number) {
 }
 
 export default function StreakActivityCard({ entry, onOpen, onStart }: Props) {
+  const [streakCount, setStreakCount] = useState(0);
+
+  // Fetch streak count from API
+  useEffect(() => {
+    const fetchStreakCount = async () => {
+      try {
+        const response = await fetch(`/api/streaks/${entry.id}`);
+        if (response.ok) {
+          const streak = await response.json();
+          // Count the histories for this streak
+          if (streak.histories) {
+            setStreakCount(streak.histories.length);
+          }
+        }
+      } catch (error) {
+        console.error("Error fetching streak count:", error);
+        setStreakCount(0);
+      }
+    };
+
+    if (entry.id) {
+      fetchStreakCount();
+    }
+  }, [entry.id]);
+
   return (
     <div
       onClick={() => onOpen(entry)}
@@ -59,7 +84,9 @@ export default function StreakActivityCard({ entry, onOpen, onStart }: Props) {
         </div>
         <div className="flex flex-col justify-center items-center text-center">
           <span className="text-xs text-gray-500 mb-1">Streak</span>
-          <span className="text-sm font-semibold text-gray-900">6</span>
+          <span className="text-sm font-semibold text-gray-900">
+            {streakCount}
+          </span>
         </div>
       </div>
 

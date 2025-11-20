@@ -1,13 +1,20 @@
 "use client";
 
 import React, { useEffect, useState, useRef } from "react";
-import Image from "next/image";
 import SidebarWrapper from "./SidebarWrapper";
+import { showError } from "@/lib/toast";
+import {
+  XMarkIcon,
+  Bars3Icon,
+  ClockIcon,
+  CalendarDaysIcon,
+} from "@heroicons/react/24/outline";
 
 interface AddToDoProps {
   isOpen: boolean;
   onClose: () => void;
   onSubmit?: (data: ToDoFormData) => void;
+  onSuccess?: () => void;
 }
 
 export interface ToDoFormData {
@@ -20,7 +27,7 @@ export interface ToDoFormData {
   status?: string;
 }
 
-const AddToDo: React.FC<AddToDoProps> = ({ isOpen, onClose, onSubmit }) => {
+const AddToDo: React.FC<AddToDoProps> = ({ isOpen, onClose, onSubmit, onSuccess }) => {
   const [mounted, setMounted] = useState(false);
   const timerRef = useRef<NodeJS.Timeout | null>(null);
 
@@ -51,6 +58,10 @@ const AddToDo: React.FC<AddToDoProps> = ({ isOpen, onClose, onSubmit }) => {
   };
 
   const handleSubmit = () => {
+    if (!title || !category || !priority || !date || !time) {
+      showError("Please fill in all required fields");
+      return;
+    }
     const payload: ToDoFormData = {
       title,
       category,
@@ -61,6 +72,7 @@ const AddToDo: React.FC<AddToDoProps> = ({ isOpen, onClose, onSubmit }) => {
       status: "Not Started",
     };
     if (onSubmit) onSubmit(payload);
+    if (onSuccess) onSuccess();
     // Reset form
     setTitle("");
     setCategory("");
@@ -99,34 +111,38 @@ const AddToDo: React.FC<AddToDoProps> = ({ isOpen, onClose, onSubmit }) => {
               value={title}
               onChange={(e) => setTitle(e.target.value)}
               placeholder="To-Do Title"
-              className="w-full text-lg font-semibold text-gray-900 bg-transparent border-none outline-none placeholder-gray-400 truncate p-0"
+              className="w-full text-lg font-semibold text-gray-900 bg-gray-50 border border-gray-300 rounded-lg px-3 py-2 outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent truncate"
             />
-            <div className="text-sm text-gray-500 mt-1">
+            <div className="text-sm text-gray-500 mt-2">
               Add a new to-do item
             </div>
           </div>
           <button
             onClick={handleClose}
-            className="text-gray-600 hover:text-gray-900 text-2xl leading-none transition shrink-0"
+            className="text-gray-600 hover:text-gray-900 transition shrink-0"
           >
-            ✕
+            <XMarkIcon className="w-6 h-6" />
           </button>
         </div>
       </div>
 
       <div className="px-6 py-6 flex-1 space-y-5 overflow-y-auto">
         {/* 1. Category Dropdown */}
-        <div className="flex items-center gap-3 border border-gray-300 rounded-lg px-4 py-3 bg-white">
-          <Image
-            src="/img/add-activity/category_icon.png"
-            width={20}
-            height={20}
-            alt="category"
-          />
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-2">
+            Category
+          </label>
           <select
             value={category}
             onChange={(e) => setCategory(e.target.value)}
-            className="flex-1 bg-transparent outline-none text-sm text-gray-900 focus:ring-0"
+            className="w-full border border-gray-300 rounded-lg px-4 py-2.5 text-sm bg-white outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent appearance-none cursor-pointer"
+            style={{
+              backgroundImage: `url("data:image/svg+xml;charset=UTF-8,%3csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='2'%3e%3cpolyline points='6 9 12 15 18 9'%3e%3c/polyline%3e%3c/svg%3e")`,
+              backgroundRepeat: "no-repeat",
+              backgroundPosition: "right 0.5rem center",
+              backgroundSize: "1.5em 1.5em",
+              paddingRight: "2.5rem",
+            }}
           >
             <option value="">Select Category</option>
             {categories.map((cat) => (
@@ -138,17 +154,21 @@ const AddToDo: React.FC<AddToDoProps> = ({ isOpen, onClose, onSubmit }) => {
         </div>
 
         {/* 2. Priority Dropdown */}
-        <div className="flex items-center gap-3 border border-gray-300 rounded-lg px-4 py-3 bg-white">
-          <Image
-            src="/img/add-activity/prioritas_icon.png"
-            width={20}
-            height={20}
-            alt="priority"
-          />
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-2">
+            Priority
+          </label>
           <select
             value={priority}
             onChange={(e) => setPriority(e.target.value)}
-            className="flex-1 bg-transparent outline-none text-sm text-gray-900 focus:ring-0"
+            className="w-full border border-gray-300 rounded-lg px-4 py-2.5 text-sm bg-white outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent appearance-none cursor-pointer"
+            style={{
+              backgroundImage: `url("data:image/svg+xml;charset=UTF-8,%3csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='2'%3e%3cpolyline points='6 9 12 15 18 9'%3e%3c/polyline%3e%3c/svg%3e")`,
+              backgroundRepeat: "no-repeat",
+              backgroundPosition: "right 0.5rem center",
+              backgroundSize: "1.5em 1.5em",
+              paddingRight: "2.5rem",
+            }}
           >
             <option value="">Select Priority</option>
             {priorityOptions.map((p) => (
@@ -160,47 +180,52 @@ const AddToDo: React.FC<AddToDoProps> = ({ isOpen, onClose, onSubmit }) => {
         </div>
 
         {/* 3. Date Input */}
-        <div className="flex items-center gap-3 border border-gray-300 rounded-lg px-4 py-3 bg-white">
-          <Image
-            src="/img/add-activity/calendar_icon.png"
-            width={20}
-            height={20}
-            alt="calendar"
-          />
-          <input
-            type="date"
-            value={date}
-            onChange={(e) => setDate(e.target.value)}
-            placeholder="Select Date"
-            className="flex-1 bg-transparent outline-none text-sm text-gray-900 placeholder-gray-400 focus:ring-0"
-          />
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-2">
+            Date
+          </label>
+          <div className="relative">
+            <input
+              type="date"
+              value={date}
+              onChange={(e) => setDate(e.target.value)}
+              placeholder="Select Date"
+              className="w-full border border-gray-300 rounded-lg px-4 py-2.5 text-sm bg-white outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+            />
+            <CalendarDaysIcon className="absolute right-3 top-3 w-5 h-5 text-gray-400 pointer-events-none" />
+          </div>
         </div>
 
-        {/* 4. Time Input */}
-        <div className="flex items-center gap-3 border border-gray-300 rounded-lg px-4 py-3 bg-white">
-          <Image
-            src="/img/add-activity/jam_icon.png"
-            width={20}
-            height={20}
-            alt="time"
-          />
-          <input
-            type="time"
-            value={time}
-            onChange={(e) => setTime(e.target.value)}
-            placeholder="Select Time"
-            className="flex-1 bg-transparent outline-none text-sm text-gray-900 placeholder-gray-400 focus:ring-0"
-          />
+        {/* 4. Time Start Input */}
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-2">
+            Time
+          </label>
+          <div className="relative">
+            <input
+              type="time"
+              value={time}
+              onChange={(e) => setTime(e.target.value)}
+              placeholder="Select Time"
+              className="w-full border border-gray-300 rounded-lg px-4 py-2.5 text-sm bg-white outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+            />
+            <ClockIcon className="absolute right-3 top-3 w-5 h-5 text-gray-400 pointer-events-none" />
+          </div>
         </div>
 
-        {/* 5. Description Textarea */}
-        <textarea
-          value={description}
-          onChange={(e) => setDescription(e.target.value)}
-          className="w-full border border-gray-300 rounded-lg px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-gray-900 focus:border-transparent transition resize-none"
-          placeholder="Description"
-          rows={4}
-        />
+        {/* 6. Description Textarea */}
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-2">
+            Description
+          </label>
+          <textarea
+            value={description}
+            onChange={(e) => setDescription(e.target.value)}
+            className="w-full border border-gray-300 rounded-lg px-4 py-2.5 text-sm outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition resize-none"
+            placeholder="Description"
+            rows={4}
+          />
+        </div>
       </div>
 
       {/* Action Buttons */}

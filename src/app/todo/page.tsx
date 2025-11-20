@@ -19,12 +19,6 @@ export default function ToDoPage() {
       router.push("/login");
       return;
     }
-
-    // Check if email is verified
-    if (!user.verified) {
-      // Email not verified - redirect to verification page
-      router.push("/verify-email");
-    }
   }, [user, isLoading, router]);
 
   // Show loading state while checking authentication
@@ -39,8 +33,8 @@ export default function ToDoPage() {
     );
   }
 
-  // User not authenticated or not verified - show loading while redirecting
-  if (!user || !user.verified) {
+  // User not authenticated - show loading while redirecting
+  if (!user) {
     return (
       <div className="flex min-h-screen items-center justify-center bg-gray-50">
         <div className="text-center">

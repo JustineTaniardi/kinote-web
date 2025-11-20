@@ -9,7 +9,6 @@ export interface User {
   id: number;
   name: string;
   email: string;
-  verified?: boolean;
   createdAt?: string;
   updatedAt?: string;
 }
@@ -25,10 +24,6 @@ interface RegisterPayload {
   password: string;
 }
 
-interface VerifyPayload {
-  token: string;
-}
-
 interface ForgotPasswordPayload {
   email: string;
 }
@@ -38,8 +33,8 @@ interface ResetPasswordPayload {
   password: string;
 }
 
-interface ResendVerificationPayload {
-  email: string;
+interface VerifyEmailPayload {
+  token: string;
 }
 
 interface AuthResponse {
@@ -58,11 +53,10 @@ interface UseAuthReturn {
   login: (payload: LoginPayload) => Promise<AuthResponse | null>;
   register: (payload: RegisterPayload) => Promise<AuthResponse | null>;
   logout: () => void;
-  verify: (payload: VerifyPayload) => Promise<AuthResponse | null>;
   getCurrentUser: () => Promise<User | null>;
-  resendVerification: (payload: ResendVerificationPayload) => Promise<boolean>;
   forgotPassword: (payload: ForgotPasswordPayload) => Promise<boolean>;
   resetPassword: (payload: ResetPasswordPayload) => Promise<boolean>;
+  verify: (payload: VerifyEmailPayload) => Promise<boolean>;
   refetch: () => Promise<void>;
 }
 
@@ -132,20 +126,6 @@ export function useAuth(): UseAuthReturn {
 
         const data = await response.json();
 
-        // ✅ Handle unverified email (status 403)
-        if (response.status === 403 && !data.verified) {
-          safeSetState(
-            setError,
-            "Email not verified. Please check your email to verify your account."
-          );
-          return {
-            id: 0,
-            name: "",
-            email: data.email,
-            verified: false,
-          };
-        }
-
         if (!response.ok) {
           safeSetState(setError, data.message || "Login failed");
           return null;
@@ -157,7 +137,6 @@ export function useAuth(): UseAuthReturn {
           id: data.id,
           name: data.name,
           email: data.email,
-          verified: true,
         };
         localStorage.setItem("user", JSON.stringify(userData));
 
@@ -202,66 +181,15 @@ export function useAuth(): UseAuthReturn {
           return null;
         }
 
-        // ✅ DO NOT store token - user must verify email first
-        // Return email for redirect to verify page
+        // ✅ Registration successful - return the response
+        // User should log in manually after registration
         return {
           id: data.id,
           name: data.name,
           email: data.email,
+          token: data.token,
           message: data.message,
-          verified: false,
         };
-      } catch (err) {
-        const message =
-          err instanceof Error ? err.message : "An error occurred";
-        safeSetState(setError, message);
-        return null;
-      } finally {
-        safeSetState(setIsLoading, false);
-      }
-    },
-    [safeSetState]
-  );
-
-  // ========================================================================
-  // verify - Verify email with token
-  // ========================================================================
-  const verify = useCallback(
-    async (payload: VerifyPayload): Promise<AuthResponse | null> => {
-      safeSetState(setIsLoading, true);
-      safeSetState(setError, null);
-
-      try {
-        const response = await fetch("/api/auth/verify", {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify(payload),
-        });
-
-        const data = await response.json();
-
-        if (!response.ok) {
-          safeSetState(setError, data.message || "Verification failed");
-          return null;
-        }
-
-        // Store token in localStorage
-        localStorage.setItem("authToken", data.token);
-        const userData = {
-          id: data.id,
-          name: data.name,
-          email: data.email,
-          verified: true,
-        };
-        localStorage.setItem("user", JSON.stringify(userData));
-
-        // Also set cookie for middleware to read
-        document.cookie = `authToken=${data.token}; path=/; max-age=86400`;
-
-        safeSetState(setUser, userData);
-        return data;
       } catch (err) {
         const message =
           err instanceof Error ? err.message : "An error occurred";
@@ -287,8 +215,8 @@ export function useAuth(): UseAuthReturn {
       console.error("Logout API error:", err);
     });
     safeSetState(setUser, null);
-    // Redirect to login page
-    router.push("/login");
+    // Redirect to landing page
+    router.push("/");
   }, [router, safeSetState]);
 
   // ========================================================================
@@ -322,7 +250,6 @@ export function useAuth(): UseAuthReturn {
         id: userData.id,
         name: userData.name,
         email: userData.email,
-        verified: userData.verified,
         createdAt: userData.createdAt,
         updatedAt: userData.updatedAt,
       };
@@ -335,46 +262,6 @@ export function useAuth(): UseAuthReturn {
       return null;
     }
   }, [safeSetState]);
-
-  // ========================================================================
-  // resendVerification - Resend email verification token
-  // ========================================================================
-  const resendVerification = useCallback(
-    async (payload: ResendVerificationPayload): Promise<boolean> => {
-      safeSetState(setIsLoading, true);
-      safeSetState(setError, null);
-
-      try {
-        const response = await fetch("/api/auth/resend-verification", {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify(payload),
-        });
-
-        const data = await response.json();
-
-        if (!response.ok) {
-          safeSetState(
-            setError,
-            data.message || "Failed to resend verification email"
-          );
-          return false;
-        }
-
-        return true;
-      } catch (err) {
-        const message =
-          err instanceof Error ? err.message : "An error occurred";
-        safeSetState(setError, message);
-        return false;
-      } finally {
-        safeSetState(setIsLoading, false);
-      }
-    },
-    [safeSetState]
-  );
 
   // ========================================================================
   // forgotPassword - Request password reset token
@@ -447,7 +334,56 @@ export function useAuth(): UseAuthReturn {
             id: data.id,
             name: data.name,
             email: data.email,
-            verified: true,
+          };
+          localStorage.setItem("user", JSON.stringify(userData));
+          document.cookie = `authToken=${data.token}; path=/; max-age=86400`;
+          safeSetState(setUser, userData);
+        }
+
+        return true;
+      } catch (err) {
+        const message =
+          err instanceof Error ? err.message : "An error occurred";
+        safeSetState(setError, message);
+        return false;
+      } finally {
+        safeSetState(setIsLoading, false);
+      }
+    },
+    [safeSetState]
+  );
+
+  // ========================================================================
+  // verify - Verify email with token
+  // ========================================================================
+  const verify = useCallback(
+    async (payload: VerifyEmailPayload): Promise<boolean> => {
+      safeSetState(setIsLoading, true);
+      safeSetState(setError, null);
+
+      try {
+        const response = await fetch("/api/auth/verify-email", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify(payload),
+        });
+
+        const data = await response.json();
+
+        if (!response.ok) {
+          safeSetState(setError, data.message || "Failed to verify email");
+          return false;
+        }
+
+        // Auto login after email verification if token provided
+        if (data.token) {
+          localStorage.setItem("authToken", data.token);
+          const userData = {
+            id: data.id,
+            name: data.name,
+            email: data.email,
           };
           localStorage.setItem("user", JSON.stringify(userData));
           document.cookie = `authToken=${data.token}; path=/; max-age=86400`;
@@ -481,11 +417,10 @@ export function useAuth(): UseAuthReturn {
     login,
     register,
     logout,
-    verify,
     getCurrentUser,
-    resendVerification,
     forgotPassword,
     resetPassword,
+    verify,
     refetch,
   };
 }

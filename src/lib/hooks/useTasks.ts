@@ -6,27 +6,44 @@ import { useCallback } from "react";
 /**
  * Task types
  */
-export interface Task {
+export interface StatusObject {
   id: number;
-  userId: number;
-  title: string;
-  description?: string;
-  category: string;
-  subcategory?: string;
-  priority: "low" | "medium" | "high";
-  deadline: string;
-  status: "todo" | "in-progress" | "completed";
-  createdAt: string;
-  updatedAt: string;
+  name: string;
+}
+
+export interface DifficultyObject {
+  id: number;
+  name: string;
+}
+
+export interface DayObject {
+  id: number;
+  name: string;
 }
 
 export interface TaskDay {
   id: number;
   taskId: number;
-  day: number; // Day of month
-  status: "completed" | "pending" | "skipped";
+  dayId: number;
+  day?: DayObject;
   createdAt: string;
   updatedAt: string;
+}
+
+export interface Task {
+  id: number;
+  userId: number;
+  title: string;
+  description?: string;
+  priority: "low" | "medium" | "high";
+  deadline: string;
+  createdAt: string;
+  updatedAt: string;
+  difficultyId: number;
+  statusId: number;
+  difficulty?: DifficultyObject;
+  status?: StatusObject | string;
+  days?: TaskDay[];
 }
 
 /**

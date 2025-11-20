@@ -46,7 +46,7 @@ function VerifyEmailContent() {
   useEffect(() => {
     if (verifySuccess) {
       const timer = setTimeout(() => {
-        router.push("/todo");
+        router.push("/login");
       }, 3000);
       return () => clearTimeout(timer);
     }
