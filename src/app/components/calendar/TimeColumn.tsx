@@ -3,11 +3,6 @@ export default function TimeColumn() {
 
   return (
     <div className="w-20 flex-shrink-0 bg-white border-r border-gray-200">
-      {/* Header spacer */}
-      <div className="h-16 border-b border-gray-200 flex items-center justify-center px-2">
-        <span className="text-xs text-gray-400 font-medium">Jam</span>
-      </div>
-
       {/* Hours */}
       <div className="divide-y divide-gray-200">
         {hours.map((hour) => {

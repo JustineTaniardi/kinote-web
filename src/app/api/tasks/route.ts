@@ -220,27 +220,40 @@ export async function POST(req: Request) {
       );
     }
 
-    const task = await prisma.task.create({
-      data: {
-        title,
-        description,
-        deadline: new Date(deadline),
-        priority: priority || "medium",
-        userId,
-        difficultyId,
-        statusId,
-      },
-      include: {
-        difficulty: true,
-        status: true,
-      },
-    });
+    try {
+      const task = await prisma.task.create({
+        data: {
+          title,
+          description,
+          deadline: new Date(deadline),
+          priority: priority || "medium",
+          userId,
+          difficultyId,
+          statusId,
+        },
+        include: {
+          difficulty: true,
+          status: true,
+        },
+      });
 
-    return NextResponse.json(task, { status: 201 });
+      return NextResponse.json(task, { status: 201 });
+    } catch (dbError) {
+      console.error("Database error:", dbError);
+      
+      if (dbError instanceof Error && dbError.message.includes("Foreign key constraint")) {
+        return NextResponse.json(
+          { message: "Invalid difficultyId or statusId. Please ensure they exist in the database." },
+          { status: 400 }
+        );
+      }
+      
+      throw dbError;
+    }
   } catch (error) {
     console.error("Create task error:", error);
     return NextResponse.json(
-      { message: "Internal server error" },
+      { message: "Internal server error: " + (error instanceof Error ? error.message : "Unknown error") },
       { status: 500 }
     );
   }

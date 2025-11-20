@@ -137,11 +137,11 @@ const ToDoContent: React.FC = () => {
       case "name-asc":
         return sorted.sort((a, b) => a.title.localeCompare(b.title));
       case "difficulty-easy-hard":
-        const difficultyOrder = { Low: 0, Medium: 1, High: 2 };
+        const difficultyOrder = { low: 0, medium: 1, high: 2 };
         return sorted.sort(
           (a, b) =>
-            (difficultyOrder[a.priority as keyof typeof difficultyOrder] || 0) -
-            (difficultyOrder[b.priority as keyof typeof difficultyOrder] || 0)
+            (difficultyOrder[a.priority.toLowerCase() as keyof typeof difficultyOrder] || 0) -
+            (difficultyOrder[b.priority.toLowerCase() as keyof typeof difficultyOrder] || 0)
         );
       case "deadline-nearest":
         return sorted.sort((a, b) => {
@@ -253,16 +253,39 @@ const ToDoContent: React.FC = () => {
   // Handler for submit form
   const handleSubmitToDo = async (data: ToDoFormData) => {
     try {
-      // Map priority to difficulty ID (Low=1, Medium=2, High=3)
-      const difficultyMap: Record<string, number> = {
-        "Low": 1,
-        "Medium": 2,
-        "High": 3,
-      };
-      const difficultyId = difficultyMap[data.priority] || 2;
+      // Fetch difficulty and status to get correct IDs
+      const difficultyResponse = await fetch("/api/difficulty", {
+        headers: {
+          Authorization: `Bearer ${localStorage.getItem("authToken")}`,
+        },
+      });
+      const statusResponse = await fetch("/api/status", {
+        headers: {
+          Authorization: `Bearer ${localStorage.getItem("authToken")}`,
+        },
+      });
 
-      // Map status to status ID (Not Started=1)
-      const statusId = 1;
+      if (!difficultyResponse.ok || !statusResponse.ok) {
+        showError("Failed to fetch difficulty or status data");
+        return;
+      }
+
+      const difficulties = await difficultyResponse.json();
+      const statuses = await statusResponse.json();
+
+      // Map priority to difficulty ID based on actual data
+      const priorityMap: Record<string, string> = {
+        "Low": "Easy",
+        "Medium": "Medium",
+        "High": "Hard",
+      };
+      const difficultyName = priorityMap[data.priority];
+      const difficulty = difficulties.find((d: any) => d.name === difficultyName);
+      const difficultyId = difficulty?.id || 2;
+
+      // Find "pending" status
+      const status = statuses.find((s: any) => s.name === "pending");
+      const statusId = status?.id || 1;
 
       // Combine date and time for deadline
       const deadline = new Date(`${data.date}T${data.time}`);
@@ -298,16 +321,19 @@ const ToDoContent: React.FC = () => {
           updatedAt: newTask.updatedAt,
         };
         setTodos([...todos, newToDo]);
+        refetch();
         showSuccess("ToDo created successfully!");
         console.log("ToDo created successfully:", newToDo);
       } else {
-        const errorData = await response.json();
-        console.error("Failed to create todo:", errorData);
-        showError("Failed to create todo: " + (errorData.message || "Unknown error"));
+        const errorData = await response.json().catch(() => ({ message: "Unknown error occurred" }));
+        const errorMessage = errorData.message || "Failed to create todo";
+        console.error("Failed to create todo:", errorMessage);
+        showError("Failed to create todo: " + errorMessage);
       }
     } catch (error) {
-      console.error("Error creating todo:", error);
-      showError("Error creating todo: " + (error instanceof Error ? error.message : "Unknown error"));
+      const errorMessage = error instanceof Error ? error.message : "Unknown error";
+      console.error("Error creating todo:", errorMessage);
+      showError("Error creating todo: " + errorMessage);
     }
   };
 
@@ -375,6 +401,7 @@ const ToDoContent: React.FC = () => {
         t.id === convertedItem.id ? { ...t, ...convertedItem } : t
       )
     );
+    refetch();
     setSelectedActivity(convertedItem);
   };
 

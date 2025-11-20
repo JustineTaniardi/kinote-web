@@ -91,6 +91,10 @@ export default function RegisterPage() {
       setTimeout(() => {
         router.push("/login");
       }, 1000);
+    } else {
+      // Error is already set in the error state from useAuth hook
+      // This ensures the error message is displayed
+      setValidationError(null);
     }
   };
 

@@ -1,10 +1,8 @@
 import { TaskItem } from "./types";
 import EventCard from "./EventCard";
 import {
-  formatDayLabel,
   isSameDayCheck,
   getEventDimensions,
-  isCurrentDay,
 } from "./utils/date";
 
 interface DayColumnProps {
@@ -31,23 +29,12 @@ export default function DayColumn({ date, events }: DayColumnProps) {
     eventsByHour[startHour].push(event);
   });
 
-  const isToday = isCurrentDay(date);
-
   return (
-    <div className="flex-1 border-r border-gray-200 last:border-r-0 bg-white">
-      {/* Day Header */}
-      <div
-        className={`h-16 border-b border-gray-200 flex flex-col items-center justify-center font-semibold text-sm ${
-          isToday ? "bg-blue-50 text-blue-900" : "text-gray-900"
-        }`}
-      >
-        {formatDayLabel(date)}
-      </div>
-
+    <div className="flex-1 border-r border-gray-200 last:border-r-0 bg-white flex flex-col">
       {/* Hour rows */}
-      <div className="relative">
+      <div className="flex-1 divide-y divide-gray-200 relative">
         {hours.map((hour) => (
-          <div key={hour} className="h-16 border-b border-gray-200 relative">
+          <div key={hour} className="h-16 relative flex-shrink-0">
             {/* Render events for this hour */}
             {eventsByHour[hour] &&
               eventsByHour[hour].map((event) => {
